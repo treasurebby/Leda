@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@theme {
+  /* Leda palette */
+  --color-forest: #065f46;
+  --color-forest-deep: #044231;
+  --color-forest-ink: #053527;
+  --color-gold: #b45309;
+  --color-gold-bright: #d97706;
+  --color-cream: #fdfbf7;
+  --color-cream-deep: #f6f1e7;
+  --color-olive: #064e3b;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shadow-soft: 0 1px 2px rgb(6 78 59 / 0.04), 0 12px 32px -12px rgb(6 78 59 / 0.14);
+  --shadow-lift: 0 2px 4px rgb(6 78 59 / 0.05), 0 24px 48px -16px rgb(6 78 59 / 0.22);
+  --shadow-deep: 0 4px 8px rgb(5 53 39 / 0.08), 0 40px 80px -24px rgb(5 53 39 / 0.35);
+  --shadow-gold: 0 12px 32px -12px rgb(180 83 9 / 0.45);
+
+  --animate-marquee: marquee 36s linear infinite;
+  --animate-eq: eq 1s ease-in-out infinite;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-cream);
+  color: var(--color-olive);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: #b45309;
+  color: #fdfbf7;
+}
+
+/* ---------- bespoke keyframes ---------- */
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes eq {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  80%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes scan-y {
+  0% {
+    top: -18%;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: 106%;
+    opacity: 0;
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+@keyframes ticker-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---------- patterns & textures ---------- */
+/* subtle adire-inspired diamond weave, drawn with inline SVG */
+.pattern-weave {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cpath d='M36 6l10 10-10 10-10-10z' fill='none' stroke='%23064e3b' stroke-opacity='0.055' stroke-width='1.2'/%3E%3Cpath d='M36 42l10 10-10 10-10-10z' fill='none' stroke='%23064e3b' stroke-opacity='0.055' stroke-width='1.2'/%3E%3Ccircle cx='6' cy='36' r='1.4' fill='%23064e3b' fill-opacity='0.05'/%3E%3Ccircle cx='66' cy='36' r='1.4' fill='%23064e3b' fill-opacity='0.05'/%3E%3C/svg%3E");
+}
+
+.pattern-weave-light {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cpath d='M36 6l10 10-10 10-10-10z' fill='none' stroke='%23fdfbf7' stroke-opacity='0.09' stroke-width='1.2'/%3E%3Cpath d='M36 42l10 10-10 10-10-10z' fill='none' stroke='%23fdfbf7' stroke-opacity='0.09' stroke-width='1.2'/%3E%3Ccircle cx='6' cy='36' r='1.4' fill='%23fdfbf7' fill-opacity='0.08'/%3E%3Ccircle cx='66' cy='36' r='1.4' fill='%23fdfbf7' fill-opacity='0.08'/%3E%3C/svg%3E");
+}
+
+/* whatsapp-ish chat doodle background */
+.pattern-chat {
+  background-color: #efe9df;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'%3E%3Ccircle cx='18' cy='24' r='2' fill='%23064e3b' fill-opacity='0.045'/%3E%3Cpath d='M60 14l6 6-6 6-6-6z' fill='none' stroke='%23064e3b' stroke-opacity='0.04'/%3E%3Cpath d='M24 62c4-6 10-6 12 0' fill='none' stroke='%23064e3b' stroke-opacity='0.045' stroke-width='1.2'/%3E%3Crect x='64' y='58' width='8' height='8' rx='2' fill='none' stroke='%23064e3b' stroke-opacity='0.04'/%3E%3Ccircle cx='80' cy='84' r='2' fill='%23b45309' fill-opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* ---------- helpers ---------- */
+.chat-scroll {
+  scrollbar-width: none;
+}
+.chat-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track,
+  .wave-bar,
+  .scanline {
+    animation: none !important;
+  }
+}
