@@ -16,9 +16,7 @@ bearer = HTTPBearer(auto_error=False)
 DB = Annotated[AsyncSession, Depends(get_db)]
 
 
-async def current_user(
-    db: DB, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
-) -> User:
+async def current_user(db: DB, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> User:
     if creds is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     payload = decode_access_token(creds.credentials)

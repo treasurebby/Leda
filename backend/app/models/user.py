@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base, TimestampMixin, str_120, str_255, utcnow, uuid_pk
 
 
-class Role(str, enum.Enum):
+class Role(enum.StrEnum):
     owner = "owner"
     admin = "admin"
     ops = "ops"

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base, TimestampMixin, str_120, uuid_pk
 
 
-class BridgeMethod(str, enum.Enum):
+class BridgeMethod(enum.StrEnum):
     current = "current"  # distributor keeps their existing WhatsApp number
     virtual = "virtual"  # Leda provisions a virtual number
 
