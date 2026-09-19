@@ -12,6 +12,9 @@ import {
 } from "./model";
 import { SAMPLE_PRODUCTS, SAMPLE_RETAILERS, parseProducts, parseRetailers, readSpreadsheet } from "./imports";
 import { clearDraft, readDraft, safeSummary, saveDraft, type SetupData } from "./draft";
+import { ApiError } from "../api/client";
+import { hasToken, login, me, register } from "../api/auth";
+import { cancelInvite, createInvite, csvBlob, startImport, updateBridge, waitForImport } from "../api/onboarding";
 import "./onboarding.css";
 
 const HEADINGS = [
@@ -48,12 +51,30 @@ export default function Onboarding() {
   const [saveError, setSaveError] = useState("");
   const [downloaded, setDownloaded] = useState(false);
   const [resuming, setResuming] = useState(!!draft);
+  const [busy, setBusy] = useState(false);
+  const [registered, setRegistered] = useState(hasToken);
+  const [formError, setFormError] = useState("");
   const resumeStep = useRef(draft?.step ?? 0);
   const controller = useRef<AbortController | null>(null);
   const reduceMotion = useReducedMotion();
   const card = useRef<HTMLElement>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    if (!hasToken()) return;
+    void me().then(session => {
+      if (!session) { setRegistered(false); return; }
+      setRegistered(true);
+      setIdentity(current => ({
+        ...current, fullName: current.fullName || session.user.full_name, email: current.email || session.user.email,
+        phone: current.phone || session.user.phone || "", businessName: current.businessName || session.business.name,
+        industry: current.industry || session.business.industry,
+      }));
+      if (session.business.bridge_method && !method) setMethod(session.business.bridge_method as BridgeMethod);
+      if (session.business.whatsapp_number && !businessPhone) setBusinessPhone(session.business.whatsapp_number);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const data: SetupData = { identity, method, businessPhone, products, retailers, staff };
 
@@ -64,6 +85,7 @@ export default function Onboarding() {
     setFinished(false);
     setErrors({});
     setImportError("");
+    setFormError("");
     if (window.innerWidth < 640) card.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
   }
 
@@ -98,20 +120,24 @@ export default function Onboarding() {
     setJob({ kind, phase: 0 });
     setImportError("");
     try {
+      // Validate in the browser first for instant feedback; the server re-validates with the same rules.
       const rows = file ? await readSpreadsheet(file) : kind === "products" ? SAMPLE_PRODUCTS : SAMPLE_RETAILERS;
       const productRows = kind === "products" ? parseProducts(rows) : null;
       const retailerRows = kind === "retailers" ? parseRetailers(rows) : null;
-      await delay(450, signal);
-      setJob({ kind, phase: 1 });
-      await delay(650, signal);
-      setJob({ kind, phase: 2 });
-      await delay(600, signal);
-      if (signal.aborted) return;
       const fileName = file?.name ?? `leda-sample-${kind}.csv`;
+      await delay(300, signal);
+      setJob({ kind, phase: 1 });
+      const started = await startImport(kind, file ?? csvBlob(rows), fileName);
+      setJob({ kind, phase: 2 });
+      const result = await waitForImport(started.id, signal);
+      if (signal.aborted) return;
+      if (result.status === "failed") throw new Error(result.errors[0] ?? "The import failed. Please try again.");
       if (productRows) setProducts({ fileName, rows: productRows, sample: !file });
       if (retailerRows) setRetailers({ fileName, rows: retailerRows, sample: !file });
     } catch (error) {
-      if (!signal.aborted) setImportError(error instanceof Error ? error.message : "We couldn't read the file. Please try again.");
+      if (signal.aborted) return;
+      if (error instanceof ApiError && error.status === 401) setImportError("Your session has expired. Go back to step 1 to sign in again.");
+      else setImportError(error instanceof Error ? error.message : "We couldn't read the file. Please try again.");
     } finally {
       if (controller.current === activeController) { setJob(null); controller.current = null; }
     }
@@ -123,21 +149,35 @@ export default function Onboarding() {
     setJob(null);
   }
 
-  function addMember(): StaffMember | null {
+  async function addMember(): Promise<StaffMember | null> {
     const validation = validateStaff(staffInput, staff, identity.email);
     if (Object.keys(validation).length) { setErrors(validation); focusError(); return null; }
-    const member: StaffMember = {
-      id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `staff-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      email: staffInput.email.trim().toLowerCase(),
-      phone: normalisePhone(staffInput.phone)!, role: staffInput.role,
-    };
-    setStaff(current => [...current, member]);
-    setStaffInput({ ...EMPTY_STAFF });
-    setErrors({});
-    return member;
+    const email = staffInput.email.trim().toLowerCase();
+    const phone = normalisePhone(staffInput.phone)!;
+    setBusy(true);
+    try {
+      const invite = await createInvite(email, phone, staffInput.role);
+      const member: StaffMember = { id: invite.id, inviteId: invite.id, email, phone, role: staffInput.role };
+      setStaff(current => [...current, member]);
+      setStaffInput({ ...EMPTY_STAFF });
+      setErrors({});
+      return member;
+    } catch (error) {
+      setErrors(error instanceof ApiError ? { staffEmail: error.message } : { staffEmail: "We couldn't send that invitation. Please try again." });
+      focusError();
+      return null;
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function completeSetup(skipPendingMember = false) {
+  function removeMember(id: string) {
+    const member = staff.find(item => item.id === id);
+    setStaff(current => current.filter(item => item.id !== id));
+    if (member?.inviteId) void cancelInvite(member.inviteId).catch(() => undefined);
+  }
+
+  async function completeSetup(skipPendingMember = false) {
     const identityErrors = validateIdentity(identity);
     if (Object.keys(identityErrors).length) {
       navigate(0);
@@ -151,8 +191,8 @@ export default function Onboarding() {
       focusError();
       return;
     }
-    const pending = !!(staffInput.email.trim() || staffInput.phone.trim() || staffInput.password);
-    if (!skipPendingMember && pending && !addMember()) return;
+    const pending = !!(staffInput.email.trim() || staffInput.phone.trim());
+    if (!skipPendingMember && pending && !(await addMember())) return;
     if (skipPendingMember) setStaffInput({ ...EMPTY_STAFF });
     setReached(4);
     setFinished(true);
@@ -161,13 +201,43 @@ export default function Onboarding() {
     if (window.innerWidth < 640) card.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (job) return;
+    if (job || busy) return;
+    setFormError("");
     if (step === 0) {
       const validation = validateIdentity(identity);
       setErrors(validation);
       if (Object.keys(validation).length) { focusError(); return; }
+      setBusy(true);
+      try {
+        if (registered || resuming) {
+          // Returning: the account already exists, so the password re-entry is a real sign-in.
+          await login(identity.email.trim().toLowerCase(), identity.password);
+          setRegistered(true);
+        } else {
+          await register({
+            full_name: identity.fullName.trim(), phone: identity.phone, email: identity.email.trim().toLowerCase(),
+            password: identity.password, business_name: identity.businessName.trim(),
+            industry: identity.industry === "Other" ? identity.customIndustry.trim() : identity.industry,
+            custom_industry: identity.industry === "Other" ? identity.customIndustry.trim() : null,
+          });
+          setRegistered(true);
+        }
+      } catch (error) {
+        if (error instanceof ApiError) {
+          if (error.status === 409) {
+            setErrors({ email: "An account with this email already exists. Re-enter your password to sign in." });
+            setResuming(true);
+          } else if (error.status === 401) setErrors({ password: "That password doesn't match this account." });
+          else if (error.status === 422) setErrors(error.fieldErrors());
+          else setFormError(error.message);
+        } else setFormError("We couldn't reach Leda. Check your connection and try again.");
+        focusError();
+        return;
+      } finally {
+        setBusy(false);
+      }
       if (resuming && resumeStep.current > 1) {
         const resume = resumeStep.current;
         setResuming(false);
@@ -180,10 +250,19 @@ export default function Onboarding() {
     if (step === 1) {
       if (!method) { setErrors({ bridge: "Choose the number option that works for your business." }); return; }
       if (method === "current" && !normalisePhone(businessPhone)) { setErrors({ bridgePhone: "Enter a valid Nigerian mobile number." }); focusError(); return; }
+      setBusy(true);
+      try {
+        await updateBridge(method, method === "current" ? normalisePhone(businessPhone) : null);
+      } catch (error) {
+        setFormError(error instanceof ApiError ? error.message : "We couldn't save your connection choice. Please try again.");
+        return;
+      } finally {
+        setBusy(false);
+      }
     }
     if (step === 2 && !products) { setImportError("Add a product list, try sample data, or choose Skip for later."); return; }
     if (step === 3 && !retailers) { setImportError("Import your retailers, try sample data, or choose I'll do this later."); return; }
-    if (step === 4) { completeSetup(); return; }
+    if (step === 4) { await completeSetup(); return; }
     nextStep();
   }
 
@@ -215,7 +294,7 @@ export default function Onboarding() {
   }
 
   function exportSummary() {
-    const summary = { mode: "preview", preparedAt: new Date().toISOString(), ...safeSummary(data) };
+    const summary = { preparedAt: new Date().toISOString(), ...safeSummary(data) };
     downloadFile(JSON.stringify(summary, null, 2), "leda-workspace-setup.json", "application/json");
     setDownloaded(true);
   }
@@ -230,10 +309,10 @@ export default function Onboarding() {
 
   const summaryRows = [
     { label: "Your business", value: identity.businessName, detail: identity.industry === "Other" ? identity.customIndustry : identity.industry },
-    { label: "Your connection", value: method === "current" ? normalisePhone(businessPhone) || businessPhone : "Leda Virtual Number", detail: "Selected, pending activation" },
-    { label: "Your products", value: products ? `${products.rows.length} products prepared` : "Add products later", detail: products?.sample ? "Sample catalog" : products?.fileName },
-    { label: "Your retailers", value: retailers ? `${retailers.rows.length} retailers prepared` : "Add retailers later", detail: retailers ? "Preview references only" : undefined },
-    { label: "Your team", value: staff.length ? `${staff.length} team ${staff.length === 1 ? "member" : "members"} prepared` : "Just you, for now", detail: staff.length ? "Roles assigned, invitations not sent" : "You can add your team anytime" },
+    { label: "Your connection", value: method === "current" ? normalisePhone(businessPhone) || businessPhone : "Leda Virtual Number", detail: method === "current" ? "Saved to your workspace" : "Selected, number provisioning pending" },
+    { label: "Your products", value: products ? `${products.rows.length} products imported` : "Add products later", detail: products?.sample ? "Sample catalog" : products?.fileName },
+    { label: "Your retailers", value: retailers ? `${retailers.rows.length} retailers imported` : "Add retailers later", detail: retailers ? "Virtual accounts are created from the Retailers page" : undefined },
+    { label: "Your team", value: staff.length ? `${staff.length} ${staff.length === 1 ? "invitation" : "invitations"} sent` : "Just you, for now", detail: staff.length ? "Each person sets their own password from the email" : "You can add your team anytime" },
   ];
 
   return (
@@ -268,9 +347,9 @@ export default function Onboarding() {
                 <dl className="setup-summary">
                   {summaryRows.map((row, index) => <div key={row.label} className="summary-row"><dt>{row.label}</dt><dd><strong>{row.value}</strong>{row.detail && <span>{row.detail}</span>}</dd><button type="button" className="setup-icon-button" onClick={() => navigate(index)} aria-label={`Edit ${row.label.toLowerCase()}`}><Pencil size={14} /></button></div>)}
                 </dl>
-                <p className="completion-disclosure">This is a setup preview. Live logins, WhatsApp numbers, bank accounts and invitations require connected services. Passwords are not included in your summary.</p>
+                <p className="completion-disclosure">Your account, products, retailers and team invitations are saved to your Leda workspace. WhatsApp number provisioning and retailer virtual accounts activate once those providers are connected. Passwords are never included in your summary.</p>
                 <a className="setup-button setup-button-primary open-dashboard" href="#/dashboard"><ArrowRight size={16} />Open the Command Center</a>
-                <p className="download-status" role="status">{downloaded ? "Your summary has been downloaded. Keep it somewhere safe." : "Your setup is kept in this session until you leave or refresh."}</p>
+                <p className="download-status" role="status">{downloaded ? "Your summary has been downloaded. Keep it somewhere safe." : "You're signed in. Your workspace is ready whenever you come back."}</p>
                 <div className="completion-secondary-actions">
                   <button type="button" className="setup-subtle-button download-summary" onClick={exportSummary}><Download size={14} />Download setup summary</button>
                   <button type="button" className="setup-subtle-button restart-button" onClick={() => setDialog("restart")}>Start a new setup</button>
@@ -287,18 +366,20 @@ export default function Onboarding() {
                 {step === 1 && <BridgeStep method={method} onMethod={chooseMethod} phone={businessPhone} onPhone={value => { setBusinessPhone(value); setErrors({}); }} errors={errors} />}
                 {step === 2 && <ProductsStep products={products} {...importProps("products")} />}
                 {step === 3 && <RetailersStep retailers={retailers} {...importProps("retailers")} />}
-                {step === 4 && <TeamStep staff={staff} input={staffInput} onChange={changeStaff} onAdd={addMember} onRemove={id => setStaff(current => current.filter(member => member.id !== id))} onRole={(id, role) => setStaff(current => current.map(member => member.id === id ? { ...member, role } : member))} errors={errors} onSkip={() => completeSetup(true)} />}
+                {step === 4 && <TeamStep staff={staff} input={staffInput} onChange={changeStaff} onAdd={() => { void addMember(); }} onRemove={removeMember} onRole={(id, role) => setStaff(current => current.map(member => member.id === id ? { ...member, role } : member))} errors={errors} onSkip={() => { void completeSetup(true); }} />}
+
+                {formError && <p className="setup-form-error" role="alert">{formError}</p>}
 
                 <div className="setup-form-actions">
-                  <button type="button" className="setup-back-button" disabled={!!job} onClick={() => step ? navigate(step - 1) : (window.location.hash = "/welcome")}><ArrowLeft size={16} />{step ? "Back" : "Back to Leda"}</button>
-                  <button type="submit" className="setup-button setup-button-primary continue-button" disabled={!!job}>{step === 4 ? "Finish setup" : "Continue"}<ArrowRight size={17} /></button>
+                  <button type="button" className="setup-back-button" disabled={!!job || busy} onClick={() => step ? navigate(step - 1) : (window.location.hash = "/welcome")}><ArrowLeft size={16} />{step ? "Back" : "Back to Leda"}</button>
+                  <button type="submit" className="setup-button setup-button-primary continue-button" disabled={!!job || busy} aria-busy={busy}>{busy ? "One moment…" : step === 4 ? "Finish setup" : "Continue"}<ArrowRight size={17} /></button>
                 </div>
               </motion.form>
             )}
           </AnimatePresence>
         </motion.section>
 
-        <p className="setup-reassurance"><LockKeyhole size={13} strokeWidth={1.6} />Your details stay in this browser during setup. Always yours.</p>
+        <p className="setup-reassurance"><LockKeyhole size={13} strokeWidth={1.6} />Sent securely to your Leda workspace. Always yours.</p>
       </main>
 
       <footer className="setup-page-footer">

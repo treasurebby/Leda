@@ -7,6 +7,7 @@ import {
   Settings, ShieldAlert, Sparkles, Store, TrendingUp, TriangleAlert, Users, Wallet, X,
 } from "lucide-react";
 import Workspaces from "./Workspaces";
+import { logout, me, type Me } from "../api/auth";
 import "./dashboard.css";
 
 /* ------------------------------------------------------------------ data */
@@ -37,6 +38,17 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     ],
   },
 ];
+
+type Session = { name: string; initials: string; role: string; business: string; detail: string };
+const DEMO_SESSION: Session = { name: "Ada Okoro", initials: "AO", role: "Owner", business: "Okoro Wholesale Ltd", detail: "Foodstuff & groceries · Trade Fair, Lagos" };
+const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Administrator", ops: "Operations manager", sales: "Sales representative", accountant: "Accountant", warehouse: "Warehouse staff", viewer: "Viewer" };
+function toSession(m: Me): Session {
+  const parts = m.user.full_name.trim().split(/\s+/);
+  return {
+    name: m.user.full_name, initials: (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase(), role: ROLE_LABEL[m.role] ?? m.role,
+    business: m.business.name, detail: m.business.custom_industry || m.business.industry,
+  };
+}
 
 const BUSINESSES = [
   { name: "Okoro Wholesale Ltd", detail: "Foodstuff & groceries · Trade Fair, Lagos", verified: true },
@@ -142,13 +154,14 @@ function Greeting({ name }: { name: string }) {
 }
 
 /* ------------------------------------------------------------------ sidebar */
-function SidebarContent({ active, onSelect, business, unread, pending, onSignOut }: {
+function SidebarContent({ active, onSelect, business, unread, pending, onSignOut, session }: {
   active: string;
   onSelect: (key: string) => void;
   business: number;
   unread: number;
   pending: number;
   onSignOut: () => void;
+  session: Session;
 }) {
   const [switcher, setSwitcher] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -231,10 +244,10 @@ function SidebarContent({ active, onSelect, business, unread, pending, onSignOut
           </div>
         </div>
         <div className="dash-user">
-          <span className="dash-avatar" aria-hidden="true">AO</span>
+          <span className="dash-avatar" aria-hidden="true">{session.initials}</span>
           <div className="dash-user-copy">
-            <strong>Ada Okoro</strong>
-            <span>Owner · full access</span>
+            <strong>{session.name}</strong>
+            <span>{session.role}{session.role === "Owner" ? " · full access" : ""}</span>
           </div>
           <button type="button" className="dash-signout" aria-label="Sign out" onClick={onSignOut}><LogOut size={16} /></button>
         </div>
@@ -275,12 +288,24 @@ export default function Dashboard() {
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [asked, setAsked] = useState<string[]>([]);
   const [resolved, setResolved] = useState<{ id: string; label: string; retailer: string }[]>([]);
+  const [session, setSession] = useState<Session>(DEMO_SESSION);
+  const [signedIn, setSignedIn] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const newOrderRef = useRef<HTMLDivElement>(null);
   const attentionRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
+
+  /* Show the real signed-in user when there is a session; the demo persona otherwise. */
+  useEffect(() => {
+    void me().then(m => { if (m) { setSession(toSession(m)); setSignedIn(true); } });
+  }, []);
+
+  async function signOut() {
+    if (signedIn) await logout();
+    window.location.hash = "/welcome";
+  }
 
   useDismiss(bellOpen, bellRef, () => setBellOpen(false));
   useDismiss(profileOpen, profileRef, () => setProfileOpen(false));
@@ -362,7 +387,7 @@ export default function Dashboard() {
   return (
     <div className="dash-app">
       <aside className="dash-sidebar">
-        <SidebarContent active={active} onSelect={selectNav} business={business} unread={notifications} pending={pendingVerifications} onSignOut={() => { window.location.hash = "/welcome"; }} />
+        <SidebarContent active={active} onSelect={selectNav} business={business} unread={notifications} pending={pendingVerifications} onSignOut={() => { void signOut(); }} session={session} />
       </aside>
 
       <AnimatePresence>
@@ -371,7 +396,7 @@ export default function Dashboard() {
             <motion.div className="dash-scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDrawer(false)} />
             <motion.aside className="dash-sidebar" style={{ display: "flex" }} initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ duration: reduce ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }} aria-label="Workspace navigation">
               <button type="button" className="dash-drawer-close" aria-label="Close navigation" onClick={() => setDrawer(false)}><X size={17} /></button>
-              <SidebarContent active={active} onSelect={selectNav} business={business} unread={notifications} pending={pendingVerifications} onSignOut={() => { window.location.hash = "/welcome"; }} />
+              <SidebarContent active={active} onSelect={selectNav} business={business} unread={notifications} pending={pendingVerifications} onSignOut={() => { void signOut(); }} session={session} />
             </motion.aside>
           </>
         )}
@@ -425,8 +450,8 @@ export default function Dashboard() {
 
             <div className="dash-popover-wrap" ref={profileRef}>
               <button type="button" className="dash-profile-button" aria-haspopup="menu" aria-expanded={profileOpen} onClick={() => setProfileOpen(open => !open)}>
-                <span className="dash-avatar" aria-hidden="true">AO</span>
-                <span className="dash-profile-copy"><strong>Ada Okoro</strong><span>Owner</span></span>
+                <span className="dash-avatar" aria-hidden="true">{session.initials}</span>
+                <span className="dash-profile-copy"><strong>{session.name}</strong><span>{session.role}</span></span>
                 <ChevronDown size={15} style={{ color: "#93a091" }} />
               </button>
               <AnimatePresence>
@@ -434,7 +459,7 @@ export default function Dashboard() {
                   <motion.div className="dash-popover" role="menu" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.16 }}>
                     <button type="button" role="menuitem" className="dash-popover-item" onClick={() => { setProfileOpen(false); setActive("settings"); }}><Settings size={16} /><div style={{ flex: 1 }}><p>Workspace settings</p><span>Business profile, channels, payments</span></div></button>
                     <a className="dash-popover-item" role="menuitem" href="#/welcome" style={{ textDecoration: "none" }}><ArrowUpRight size={16} /><div style={{ flex: 1 }}><p>View the public site</p><span>Landing page and decode demo</span></div></a>
-                    <a className="dash-popover-item" role="menuitem" href="#/welcome" style={{ textDecoration: "none" }}><LogOut size={16} /><div style={{ flex: 1 }}><p>Sign out</p><span>Ada Okoro · Owner</span></div></a>
+                    <button type="button" role="menuitem" className="dash-popover-item" onClick={() => { setProfileOpen(false); void signOut(); }}><LogOut size={16} /><div style={{ flex: 1 }}><p>Sign out</p><span>{session.name} · {session.role}</span></div></button>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -458,7 +483,7 @@ export default function Dashboard() {
             <>
               <div className="dash-content-head">
                 <div>
-                  <h2><Greeting name="Ada" /></h2>
+                  <h2><Greeting name={session.name.split(" ")[0]} /></h2>
                   <p>{new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long" })} · {BUSINESSES[business].name} · updated just now</p>
                 </div>
                 <div className="dash-content-actions">

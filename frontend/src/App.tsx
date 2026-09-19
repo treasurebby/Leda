@@ -4,8 +4,10 @@ import LandingPage from "./components/LandingPage";
 import Onboarding from "./onboarding/Onboarding";
 import Dashboard from "./dashboard/Dashboard";
 import OrderDetail from "./order-detail/OrderDetail";
+import Login from "./auth/Login";
+import Join from "./auth/Join";
 
-type View = "landing" | "onboarding" | "dashboard" | "order";
+type View = "landing" | "onboarding" | "dashboard" | "order" | "login" | "join";
 
 const LANDING_HASHES = new Set(["#/welcome", "#top", "#decode", "#features", "#voices", "#signup"]);
 const ONBOARDING_HASHES = new Set(["#/onboarding", "#/setup"]);
@@ -14,6 +16,8 @@ const TITLES: Record<View, string> = {
   onboarding: "Leda | Set up your business",
   dashboard: "Leda | Command Center",
   order: "Leda | Order detail",
+  login: "Leda | Sign in",
+  join: "Leda | Join your team",
 };
 
 function resolveView(): View {
@@ -21,6 +25,8 @@ function resolveView(): View {
   if (LANDING_HASHES.has(hash)) return "landing";
   if (ONBOARDING_HASHES.has(hash)) return "onboarding";
   if (hash.startsWith("#/order/")) return "order";
+  if (hash === "#/login") return "login";
+  if (hash.startsWith("#/join/")) return "join";
   return "dashboard";
 }
 
@@ -49,6 +55,8 @@ export default function App() {
       {view === "onboarding" && <Onboarding />}
       {view === "dashboard" && <Dashboard />}
       {view === "order" && <OrderDetail />}
+      {view === "login" && <Login />}
+      {view === "join" && <Join token={decodeURIComponent(window.location.hash.slice("#/join/".length))} />}
     </MotionConfig>
   );
 }

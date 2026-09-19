@@ -326,3 +326,12 @@
 @media (prefers-reduced-motion: reduce) {
   .onboarding-page *, .setup-dialog * { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }
+.setup-form-error {
+  margin: 0.25rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
