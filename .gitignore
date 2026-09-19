@@ -26,3 +26,7 @@ playwright-report/
 test-results/
 openapi.local.json
 pytest-cache-files-*/
+
+# LibreOffice / Office lock files
+.~lock.*#
+~$*

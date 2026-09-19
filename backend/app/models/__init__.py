@@ -1,6 +1,17 @@
 # Every aggregate's models are imported here so Alembic and the app see one registry.
 from app.models.business import BridgeMethod, Business
-from app.models.catalog import ImportJob, ImportKind, ImportStatus, Product, Retailer, RetailerTier
+from app.models.catalog import (
+    CatalogDraft,
+    CatalogDraftStatus,
+    ImportJob,
+    ImportKind,
+    ImportStatus,
+    Product,
+    ProductRequest,
+    ProductRequestStatus,
+    Retailer,
+    RetailerTier,
+)
 from app.models.order import (
     Channel,
     Evidence,
@@ -22,6 +33,8 @@ __all__ = [
     "ROLE_LABELS",
     "BridgeMethod",
     "Business",
+    "CatalogDraft",
+    "CatalogDraftStatus",
     "Channel",
     "Evidence",
     "EvidenceKind",
@@ -43,6 +56,8 @@ __all__ = [
     "PaymentStatus",
     "PasswordResetToken",
     "Product",
+    "ProductRequest",
+    "ProductRequestStatus",
     "RefreshToken",
     "Retailer",
     "RetailerTier",

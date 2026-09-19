@@ -335,3 +335,16 @@
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+/* ---- Price list -> catalog (no-spreadsheet path) */
+.price-list-panel { margin-top: 1rem; padding: 1rem 1.1rem; border: 1px dashed #cfdbd4; border-radius: 14px; background: #f7faf8; }
+.price-list-heading { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0.6rem; font-weight: 650; color: #065f46; font-size: 0.95rem; }
+.price-list-textarea { width: 100%; resize: vertical; font: inherit; line-height: 1.45; }
+.price-list-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.75rem; }
+.price-list-hint { margin: 0.7rem 0 0; font-size: 0.82rem; color: #6b7a72; }
+.setup-input-compact { padding: 0.35rem 0.5rem; font-size: 0.88rem; min-width: 7rem; }
+.price-list-table td { padding: 0.25rem 0.35rem; }
+.price-list-check td:first-child { box-shadow: inset 3px 0 0 #d97706; }
+.spin { animation: leda-spin 0.9s linear infinite; }
+@keyframes leda-spin { to { transform: rotate(360deg); } }
+.price-list-divider { margin: 0.9rem 0 0.4rem; text-align: center; font-size: 0.8rem; color: #8a968f; text-transform: uppercase; letter-spacing: 0.08em; }

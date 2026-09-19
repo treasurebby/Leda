@@ -50,3 +50,23 @@ export function csvBlob(rows: string[][]) {
   const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   return new Blob([rows.map(r => r.map(escape).join(",")).join("\n")], { type: "text/csv" });
 }
+
+/* ------------------------------------------------------------------ price list -> catalog */
+export type CatalogItem = { name: string; unit: string | null; price: string | number | null; sku?: string | null; stock?: number; aliases?: string[]; confidence?: number; note?: string | null };
+export type CatalogDraft = { id: string; source: string; status: string; items: CatalogItem[]; summary: string | null; inserted: number; updated: number; created_at: string };
+
+export function extractPriceListText(text: string) {
+  return api.post<CatalogDraft>("/catalog/extract", { text });
+}
+
+export function extractPriceListFile(file: File) {
+  return api.upload<CatalogDraft>("/catalog/extract-file", file);
+}
+
+export function applyCatalogDraft(id: string, items?: CatalogItem[]) {
+  return api.post<CatalogDraft>(`/catalog/drafts/${id}/apply`, items ? { items } : {});
+}
+
+export function discardCatalogDraft(id: string) {
+  return api.post<Schemas["Message"]>(`/catalog/drafts/${id}/discard`);
+}

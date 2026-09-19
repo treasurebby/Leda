@@ -122,3 +122,53 @@ class ImportJobOut(ORMModel):
 class Page[T](BaseModel):
     items: list[T]
     total: int
+
+
+class CatalogItem(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    unit: str | None = Field(default=None, max_length=64)
+    price: Decimal | None = Field(default=None, ge=0)
+    sku: str | None = Field(default=None, max_length=64)
+    stock: int = Field(default=0, ge=0)
+    aliases: list[str] = Field(default_factory=list)
+    confidence: int = Field(default=100, ge=0, le=100)
+    note: str | None = None
+
+
+class CatalogDraftOut(ORMModel):
+    id: uuid.UUID
+    source: str
+    status: str
+    items: list[CatalogItem]
+    summary: str | None = None
+    inserted: int
+    updated: int
+    created_at: datetime
+
+
+class CatalogExtractText(BaseModel):
+    """Pasted price list. (Photos and voice notes go through the multipart endpoint.)"""
+
+    text: str = Field(min_length=3, max_length=20000)
+
+
+class CatalogApply(BaseModel):
+    items: list[CatalogItem] | None = None  # edited rows; omit to apply the draft as extracted
+
+
+class ProductRequestOut(ORMModel):
+    id: uuid.UUID
+    query: str
+    times_asked: int
+    status: str
+    product_id: uuid.UUID | None
+    first_asked_at: datetime
+    last_asked_at: datetime
+
+
+class ProductRequestAdd(BaseModel):
+    price: Decimal = Field(ge=0)
+    name: str | None = Field(default=None, max_length=120)
+    unit: str | None = Field(default=None, max_length=64)
+    sku: str | None = Field(default=None, max_length=64)
+    stock: int = Field(default=0, ge=0)

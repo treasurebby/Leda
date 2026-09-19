@@ -55,6 +55,18 @@ Every tenant table carries `business_id`; `current_tenant` resolves the caller's
 Dev-only (`APP_ENV=dev`): `POST /dev/simulate/whatsapp` (text, audio or image upload) and
 `POST /dev/simulate/paystack-credit` drive the pipeline without Meta or Paystack accounts.
 
+### Getting the catalog in without a spreadsheet
+
+- **Forward your price list.** A WhatsApp message from the business's own number or any team member's phone is
+  treated as the owner managing the catalog, not a retailer ordering. Text, a photo of the price board or a voice
+  note goes through `Decoder.extract_catalog` -> `catalog_drafts`; Sabi replies with what it read and the owner
+  answers YES (apply, upserting by product name) or NO (discard). The same extractor backs onboarding step 3's
+  "paste or snap your price list" panel via `POST /catalog/extract`, `POST /catalog/extract-file`,
+  `POST /catalog/drafts/{id}/apply` (with optional edited rows) and `/discard`.
+- **Learn from demand.** Anything a retailer asks for that isn't stocked lands in `product_requests`, counted per
+  distinct query. `GET /product-requests` lists them by popularity; `POST /product-requests/{id}/add {price, unit}`
+  turns one into a product (the retailer's wording becomes an alias), `/dismiss` hides it until asked again.
+
 ## Configuration (`backend/.env`)
 
 | Variable | Purpose |
