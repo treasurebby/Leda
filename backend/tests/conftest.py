@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.core.db import Base, get_db  # noqa: E402
+from app.core.db import Base, get_db, get_session_factory  # noqa: E402
 from app.integrations.email import FakeEmailSender, get_email_sender  # noqa: E402
 from app.main import create_app  # noqa: E402
 
@@ -59,6 +59,7 @@ async def client(engine, mailer) -> AsyncIterator[AsyncClient]:
             yield session
 
     app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_session_factory] = lambda: maker
     app.dependency_overrides[get_email_sender] = lambda: mailer
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         c.app = app  # type: ignore[attr-defined]
