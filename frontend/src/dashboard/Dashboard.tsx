@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Bell, Boxes, Camera, Check,
+  ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Bell, Bot, Boxes, Camera, Check,
   CheckCheck, ChevronDown, ChevronRight, ClipboardList, Clock, HandCoins,
   LayoutDashboard, LogOut, Menu, MessageSquare, Mic, Plus, ReceiptText, Search,
   Settings, ShieldAlert, Sparkles, Store, TrendingUp, TriangleAlert, Users, Wallet, X,
@@ -149,6 +149,40 @@ function Greeting({ name }: { name: string }) {
   return <>{part}, {name}</>;
 }
 
+function AttentionPage({ flags, pendingVerifications, onOpenFlag, onNavigate }: {
+  flags: Flag[];
+  pendingVerifications: number;
+  onOpenFlag: (id: string) => void;
+  onNavigate: (key: string) => void;
+}) {
+  const items = [
+    ...flags.map(flag => ({
+      key: flag.id,
+      category: "AI review",
+      title: `${flag.retailer} · ${flag.issue}`,
+      detail: `${flag.kind} raised ${flag.raised}`,
+      icon: flag.kind === "Voice note" ? Mic : flag.kind === "Photo" ? Camera : MessageSquare,
+      tone: "amber",
+      action: "Review flag",
+      onAction: () => onOpenFlag(flag.id),
+    })),
+    { key: "payment-1", category: "Payments", title: "3 transfers are waiting to be matched", detail: "Review incoming payments before the next ledger sync", icon: Banknote, tone: "gold", action: "Open payments", onAction: () => onNavigate("payments") },
+    { key: "stock-1", category: "Inventory", title: "2 products are below reorder level", detail: "Mama Gold Premium Rice and Kings Vegetable Oil need replenishing", icon: Boxes, tone: "green", action: "Open inventory", onAction: () => onNavigate("inventory") },
+    { key: "verify-1", category: "Verification", title: `${pendingVerifications} items are awaiting verification`, detail: "Nothing blocks a sale, but clearing these keeps your workspace current", icon: ShieldAlert, tone: "amber", action: "Review queue", onAction: () => onNavigate("orders") },
+  ];
+
+  return <div className="attention-page">
+    <div className="attention-page-head"><div><p className="settings-eyebrow">Signals</p><h2>Needs attention</h2><p>Everything that could use a decision, review, or follow-up in your workspace.</p></div><span className="dash-attention-count">{items.length}</span></div>
+    <div className="attention-list" aria-label="Things that need attention">
+      {items.map(item => <article className={`attention-item attention-item-${item.tone}`} key={item.key}>
+        <span className="attention-item-icon"><item.icon size={18} /></span>
+        <div className="attention-item-copy"><span>{item.category}</span><h3>{item.title}</h3><p>{item.detail}</p></div>
+        <button type="button" className="dash-button-ghost" onClick={item.onAction}>{item.action}<ArrowRight size={14} /></button>
+      </article>)}
+    </div>
+  </div>;
+}
+
 /* ------------------------------------------------------------------ sidebar */
 function SidebarContent({ active, onSelect, business, unread, pending, onSignOut, session }: {
   active: string;
@@ -223,7 +257,7 @@ function SidebarContent({ active, onSelect, business, unread, pending, onSignOut
         {unread > 0 && (
           <div className="dash-nav-group">
             <p>Signals</p>
-            <button type="button" className="dash-nav-item" onClick={() => onSelect("dashboard")}>
+            <button type="button" className={`dash-nav-item${active === "attention" ? " dash-nav-item-active" : ""}`} aria-current={active === "attention" ? "page" : undefined} onClick={() => onSelect("attention")}>
               <Bell size={17.5} strokeWidth={1.75} />
               <span className="dash-nav-label">Needs attention</span>
               <span className="dash-nav-badge dash-nav-badge-alert">{pending}</span>
@@ -285,6 +319,9 @@ export default function Dashboard({ account }: { account: Me }) {
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [asked, setAsked] = useState<string[]>([]);
   const [resolved, setResolved] = useState<{ id: string; label: string; retailer: string }[]>([]);
+  const [aiQuestion, setAiQuestion] = useState("");
+  const [aiAnswer, setAiAnswer] = useState("");
+  const [aiHistory, setAiHistory] = useState<{ question: string; answer: string }[]>([]);
   const session = toSession(account);
   const { signOut: endSession } = useSession();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -363,6 +400,24 @@ export default function Dashboard({ account }: { account: Me }) {
 
   function undoFlag(id: string) {
     setResolved(current => current.filter(item => item.id !== id));
+  }
+
+  function askSabi(question = aiQuestion) {
+    const prompt = question.trim().toLowerCase();
+    if (!prompt) return;
+    if (aiQuestion.trim() && aiAnswer) setAiHistory(current => [...current, { question: aiQuestion, answer: aiAnswer }]);
+    setAiQuestion(question);
+    if (prompt.includes("stock") || prompt.includes("inventory") || prompt.includes("how many products")) {
+      setAiAnswer("You have 490 units across 6 products. Three products are below their reorder level, with 95 units currently reserved for orders.");
+    } else if (prompt.includes("order")) {
+      setAiAnswer("You have 38 orders today, including 3 still awaiting payment. The latest order was #LE-1042 from Madam Kike Stores.");
+    } else if (prompt.includes("receivable") || prompt.includes("owe") || prompt.includes("unpaid")) {
+      setAiAnswer(`${naira(receivables)} is currently outstanding across your customer accounts. ${naira(collected)} has been collected this month.`);
+    } else if (prompt.includes("attention") || prompt.includes("flag") || prompt.includes("review")) {
+      setAiAnswer(`${openFlags.length} AI review flag${openFlags.length === 1 ? " needs" : "s need"} your attention, alongside ${pendingVerifications} pending verification items.`);
+    } else {
+      setAiAnswer("I can help with inventory, orders, receivables, and things that need attention. Try one of the suggested questions.");
+    }
   }
 
   function selectNav(key: string) {
@@ -458,7 +513,9 @@ export default function Dashboard({ account }: { account: Me }) {
         </header>
 
         <main className="dash-main">
-          {active === "settings" ? (
+          {active === "attention" ? (
+            <AttentionPage flags={openFlags} pendingVerifications={pendingVerifications} onOpenFlag={id => { setActive("dashboard"); setOpenFlag(id); }} onNavigate={setActive} />
+          ) : active === "settings" ? (
             <SettingsPage account={account} />
           ) : active !== "dashboard" && isWorkspace ? (
             <Workspaces active={active as "orders" | "inventory" | "retailers" | "payments" | "ledger"} query={query} />
@@ -499,6 +556,22 @@ export default function Dashboard({ account }: { account: Me }) {
                   </span>
                 </div>
               </div>
+
+              <section className="dash-ask" aria-label="Ask Sabi">
+                <div className="dash-ask-icon"><Bot size={19} /></div>
+                <div className="dash-ask-main">
+                  <div className="dash-ask-heading"><div><h3>Ask Sabi</h3><p>Get a quick answer from your workspace snapshot.</p></div>{(aiAnswer || aiHistory.length > 0) && <button type="button" className="dash-section-link" onClick={() => { setAiAnswer(""); setAiQuestion(""); setAiHistory([]); }}>Clear history</button>}</div>
+                  <form className="dash-ask-form" onSubmit={event => { event.preventDefault(); askSabi(); }}>
+                    <input value={aiQuestion} onChange={event => setAiQuestion(event.target.value)} placeholder="How many stocks do I have?" aria-label="Ask Sabi a question" />
+                    <button type="submit" className="dash-button-primary">Ask</button>
+                  </form>
+                  <div className="dash-ask-suggestions" aria-label="Suggested questions">
+                    {["How many stocks do I have?", "What needs attention?", "How many orders today?"].map(prompt => <button key={prompt} type="button" onClick={() => askSabi(prompt)}>{prompt}</button>)}
+                  </div>
+                  {aiHistory.length > 0 && <div className="dash-ask-history" aria-label="Previous questions">{aiHistory.map((message, index) => <div className="dash-ask-history-item" key={`${message.question}-${index}`}><p className="dash-ask-question">{message.question}</p><p className="dash-ask-answer"><Bot size={14} />{message.answer}</p></div>)}</div>}
+                  {aiAnswer && <p className="dash-ask-answer" role="status"><Bot size={14} />{aiAnswer}</p>}
+                </div>
+              </section>
 
               {needle && (
                 <p className="dash-search-note" role="status">
