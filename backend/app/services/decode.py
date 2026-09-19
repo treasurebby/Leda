@@ -140,8 +140,9 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
                 if f.status == FlagStatus.open:
                     f.status = FlagStatus.asked_retailer
             order.reply_text = reply_text
-        await providers.whatsapp.send_text(signal.from_number, reply_text)
-        await db.flush()
+        await reply_svc.send_and_log(
+            db, providers.whatsapp, business_id, signal.from_number, reply_text, order.id if order else None
+        )
 
     # 5. Notify the distributor.
     if order is not None:
@@ -182,8 +183,13 @@ async def answer_question(
         return False
     order, flag = found
     if answer < 1 or answer > len(flag.options):
-        await providers.whatsapp.send_text(
-            retailer.phone or "", f"Please reply with a number between 1 and {len(flag.options)}."
+        await reply_svc.send_and_log(
+            db,
+            providers.whatsapp,
+            business_id,
+            retailer.phone or "",
+            f"Please reply with a number between 1 and {len(flag.options)}.",
+            order.id,
         )
         return True
     await order_svc.resolve_flag(db, order, flag, answer - 1, user_id=None)
@@ -196,8 +202,7 @@ async def answer_question(
             await ledger_svc.post_invoice(db, order)
         text = reply_svc.invoice_reply(order, retailer)
     order.reply_text = text
-    await providers.whatsapp.send_text(retailer.phone or "", text)
-    await db.flush()
+    await reply_svc.send_and_log(db, providers.whatsapp, business_id, retailer.phone or "", text, order.id)
     return True
 
 

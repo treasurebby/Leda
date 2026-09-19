@@ -361,3 +361,72 @@ async def test_live_openai_decoder_flags_the_slang():
     )
     assert result.lines and all(ln.sku in {c["sku"] for c in catalog} for ln in result.lines)
     assert any(f.kind == "slang" for f in result.flags), result
+
+
+async def test_routing_by_receiving_number_and_messages_view(client, owner_token, sabi, monkeypatch):
+    """Two businesses share the database; an unknown sender is routed by the number that received the message."""
+    from app.core import config
+
+    monkeypatch.setattr(config.settings, "whatsapp_verify_token", "tok")
+    h = auth(owner_token)
+    await seed(client, owner_token)
+    # claim the Meta test number for this business
+    r = await client.patch("/api/v1/business", json={"whatsapp_number": "+15551787628"}, headers=h)
+    assert r.status_code == 200 and r.json()["whatsapp_number"] == "+15551787628"
+    client.cookies.clear()
+    await register(client, email="other@x.ng", business_name="Other Ltd")  # now there are two businesses
+
+    payload = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "metadata": {
+                                "display_phone_number": "1 (555) 178-7628",
+                                "phone_number_id": "1344895592037333",
+                            },
+                            "contacts": [{"wa_id": "2347010000000", "profile": {"name": "Mama Nkechi"}}],
+                            "messages": [
+                                {
+                                    "id": "wamid.route1",
+                                    "from": "2347010000000",
+                                    "type": "text",
+                                    "text": {"body": "20 bags MGR-50"},
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    r = await client.post(
+        "/api/v1/webhooks/whatsapp", content=json.dumps(payload).encode(), headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 200
+    orders = (await client.get("/api/v1/orders", headers=h)).json()
+    assert orders["total"] == 1 and orders["items"][0]["retailer"]["name"] == "Mama Nkechi"
+
+    msgs = (await client.get("/api/v1/whatsapp/messages", headers=h)).json()
+    assert [x["direction"] for x in msgs] == ["out", "in"]  # Sabi's reply, then the inbound that caused it
+    assert msgs[0]["outcome"] == "sent" and "Pay by transfer" in msgs[0]["text"]
+    m = msgs[1]
+    assert (m["from_number"], m["sender_name"], m["kind"], m["text"]) == (
+        "+2347010000000",
+        "Mama Nkechi",
+        "text",
+        "20 bags MGR-50",
+    )
+    assert m["outcome"] == "order" and m["order_number"] == "LE-1001" and "Pay by transfer" in m["reply_text"]
+
+    # a person replies by hand from the Messages page; it lands in the same thread
+    r = await client.post(
+        "/api/v1/whatsapp/messages/send",
+        json={"to": "+2347010000000", "text": "Delivery is tomorrow morning."},
+        headers=h,
+    )
+    assert (
+        r.status_code == 201 and r.json()["direction"] == "out" and r.json()["text"] == "Delivery is tomorrow morning."
+    )
+    assert len((await client.get("/api/v1/whatsapp/messages", headers=h)).json()) == 3

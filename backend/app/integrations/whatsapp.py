@@ -4,6 +4,7 @@ media download and outbound messages. A recording fake is used when no token is 
 import hashlib
 import hmac
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -25,6 +26,7 @@ class InboundMessage:
     media_id: str | None = None
     mime: str | None = None
     sender_name: str | None = None  # WhatsApp profile name, from the payload's contacts[]
+    to_number: str | None = None  # the business number that received it (payload metadata.display_phone_number)
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -44,6 +46,8 @@ def parse_inbound(payload: dict[str, Any]) -> list[InboundMessage]:
         for change in entry.get("changes", []):
             value = change.get("value", {})
             names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts", [])}
+            display = (value.get("metadata") or {}).get("display_phone_number")
+            to_number = "+" + re.sub(r"\D", "", display) if display else None
             for msg in value.get("messages", []):
                 kind = msg.get("type")
                 item = InboundMessage(
@@ -52,6 +56,7 @@ def parse_inbound(payload: dict[str, Any]) -> list[InboundMessage]:
                     kind=kind or "other",
                     raw=msg,
                     sender_name=names.get(msg.get("from")),
+                    to_number=to_number,
                 )
                 if kind == "text":
                     item.text = msg.get("text", {}).get("body")

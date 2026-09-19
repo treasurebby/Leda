@@ -8,6 +8,7 @@ from app.api.v1 import (
     flags,
     ledger,
     media,
+    messages,
     orders,
     payments,
     products,
@@ -31,6 +32,7 @@ router.include_router(payments.router)
 router.include_router(ledger.router)
 router.include_router(webhooks.router)
 router.include_router(media.router)
+router.include_router(messages.router)
 
 if settings.is_dev:
     from app.api.v1 import dev

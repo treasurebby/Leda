@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import Workspaces from "./Workspaces";
 import SettingsPage from "./SettingsPage";
+import Messages from "./Messages";
 import type { Me } from "../api/auth";
 import { useSession } from "../auth/Session";
 import "./dashboard.css";
@@ -20,6 +21,7 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: "Workspace",
     items: [
       { key: "dashboard", label: "Command Center", icon: LayoutDashboard },
+      { key: "messages", label: "Messages", icon: MessageSquare },
       { key: "orders", label: "Orders", icon: ClipboardList, badge: "38" },
       { key: "inventory", label: "Inventory", icon: Boxes },
       { key: "retailers", label: "Retailers", icon: Store },
@@ -517,6 +519,8 @@ export default function Dashboard({ account }: { account: Me }) {
             <AttentionPage flags={openFlags} pendingVerifications={pendingVerifications} onOpenFlag={id => { setActive("dashboard"); setOpenFlag(id); }} onNavigate={setActive} />
           ) : active === "settings" ? (
             <SettingsPage account={account} />
+          ) : active === "messages" ? (
+            <Messages query={query} />
           ) : active !== "dashboard" && isWorkspace ? (
             <Workspaces active={active as "orders" | "inventory" | "retailers" | "payments" | "ledger"} query={query} />
           ) : active !== "dashboard" && activeLabel ? (
