@@ -1,3 +1,5 @@
+import uuid
+
 from app.integrations.whatsapp import FakeWhatsApp, set_whatsapp
 from app.models import Flag, FlagKind, OrderLine, ReviewState
 from tests.conftest import auth
@@ -110,9 +112,9 @@ async def test_review_toggle_and_flags(client, owner_token, db):
 
     from app.models import Order as OrderModel
 
-    db_order = (await db.execute(select(OrderModel).where(OrderModel.id == order["id"]))).scalar_one()
-    db_rice = await db.get(OrderLine, rice_line["id"])
-    db_oil = await db.get(OrderLine, oil_line["id"])
+    db_order = (await db.execute(select(OrderModel).where(OrderModel.id == uuid.UUID(order["id"])))).scalar_one()
+    db_rice = await db.get(OrderLine, uuid.UUID(rice_line["id"]))
+    db_oil = await db.get(OrderLine, uuid.UUID(oil_line["id"]))
     db_oil.review_state, db_oil.confidence_score = ReviewState.check, 71
     db.add(
         Flag(

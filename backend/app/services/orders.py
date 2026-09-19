@@ -115,7 +115,10 @@ async def replace_lines(db: AsyncSession, order: Order, lines: list[dict]) -> No
         if line is None:
             line = OrderLine(order_id=order.id, confidence_score=100, review_state=ReviewState.verified)
         line.position = position
-        line.product_id = product.id if product else data.get("product_id")
+        if product is not None:
+            line.product_id = product.id
+        elif "product_id" in data and data["product_id"] is not None:
+            line.product_id = data["product_id"]
         line.product_name = data.get("product_name") or (product.name if product else line.product_name or "")
         line.sku = data.get("sku") or (product.sku if product else line.sku)
         line.unit = data.get("unit") or (product.unit if product else line.unit)
