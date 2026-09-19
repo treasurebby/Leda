@@ -16,6 +16,7 @@ router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 class MessageOut(BaseModel):
     id: uuid.UUID
+    direction: str  # in | out
     wa_message_id: str
     from_number: str
     sender_name: str | None
@@ -51,7 +52,10 @@ async def list_messages(
     for m, order, retailer in rows:
         payload = m.payload or {}
         text = (payload.get("text") or {}).get("body") if isinstance(payload.get("text"), dict) else payload.get("text")
-        if m.error:
+        direction = "out" if m.kind == "outbound" else "in"
+        if direction == "out":
+            outcome = "sent"
+        elif m.error:
             outcome = "error"
         elif order is not None:
             outcome = "order"
@@ -62,6 +66,7 @@ async def list_messages(
         out.append(
             MessageOut(
                 id=m.id,
+                direction=direction,
                 wa_message_id=m.wa_message_id,
                 from_number=m.from_number,
                 sender_name=retailer.name if retailer else None,
@@ -77,3 +82,27 @@ async def list_messages(
             )
         )
     return out
+
+
+class SendMessage(BaseModel):
+    to: str
+    text: str
+
+
+@router.post("/messages/send", response_model=MessageOut, status_code=201)
+async def send_message(data: SendMessage, db: DB, tenant: CurrentTenant) -> MessageOut:
+    """A person on the team replies by hand. Same number, same thread as Sabi's automatic replies."""
+    from app.core.security import normalise_phone
+    from app.integrations.whatsapp import get_whatsapp
+    from app.services.reply import send_and_log
+
+    to = normalise_phone(data.to) or (data.to if data.to.startswith("+") else None)
+    text = data.text.strip()
+    if not to or not text:
+        from fastapi import HTTPException
+
+        raise HTTPException(422, "A valid phone number and a message are required")
+    await send_and_log(db, get_whatsapp(), tenant.business_id, to, text, sent_by=tenant.user.id)
+    await db.commit()
+    rows = await list_messages(db, tenant, limit=1)
+    return rows[0]

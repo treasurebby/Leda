@@ -13,6 +13,7 @@ from app.integrations.whisper import get_transcriber
 from app.models import Business, Retailer, WhatsAppMessage
 from app.services import catalog as catalog_svc
 from app.services.decode import Providers, Signal, answer_question, decode_signal
+from app.services.reply import send_and_log
 
 log = logging.getLogger(__name__)
 
@@ -136,11 +137,13 @@ async def handle_owner_message(db, business: Business, message: InboundMessage, 
 
     if message.kind == "text" and pending is not None and text.lower() in {"yes", "y", "ok", "okay", "add", "confirm"}:
         await catalog_svc.apply_draft(db, pending)
-        await wa.send_text(message.from_number, catalog_svc.applied_reply(pending))
+        await send_and_log(db, wa, business.id, message.from_number, catalog_svc.applied_reply(pending))
         return
     if message.kind == "text" and pending is not None and text.lower() in {"no", "n", "cancel", "discard"}:
         await catalog_svc.discard_draft(db, pending)
-        await wa.send_text(message.from_number, "Discarded. Send the price list again whenever you're ready.")
+        await send_and_log(
+            db, wa, business.id, message.from_number, "Discarded. Send the price list again whenever you're ready."
+        )
         return
 
     audio = image = None
@@ -151,14 +154,19 @@ async def handle_owner_message(db, business: Business, message: InboundMessage, 
         elif message.media_id:
             content, mime = await wa.download_media(message.media_id)
         else:
-            await wa.send_text(message.from_number, "I couldn't read that attachment. Try sending it again.")
+            await send_and_log(
+                db, wa, business.id, message.from_number, "I couldn't read that attachment. Try sending it again."
+            )
             return
         if message.kind == "audio":
             audio = (content, mime)
         else:
             image = (content, mime)
     elif message.kind != "text" or not text:
-        await wa.send_text(
+        await send_and_log(
+            db,
+            wa,
+            business.id,
             message.from_number,
             f"Hi, this is Leda for {business.name}. Send your price list as text, a photo, or a voice note and I'll "
             "add the products to your catalog.",
@@ -169,7 +177,10 @@ async def handle_owner_message(db, business: Business, message: InboundMessage, 
         providers.decoder, providers.transcriber, text=text or None, audio=audio, image=image
     )
     if not any(item.price is not None for item in decoded.items):
-        await wa.send_text(
+        await send_and_log(
+            db,
+            wa,
+            business.id,
             message.from_number,
             "I couldn't find any products with prices in that. Send it as lines like 'Royal Stallion 50kg - 78,500'.",
         )
@@ -177,4 +188,4 @@ async def handle_owner_message(db, business: Business, message: InboundMessage, 
     if pending is not None:
         await catalog_svc.discard_draft(db, pending)  # a new list supersedes an unconfirmed one
     draft = await catalog_svc.create_draft(db, business.id, "whatsapp", decoded)
-    await wa.send_text(message.from_number, catalog_svc.draft_reply(draft))
+    await send_and_log(db, wa, business.id, message.from_number, catalog_svc.draft_reply(draft))

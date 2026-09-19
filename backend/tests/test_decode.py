@@ -409,8 +409,9 @@ async def test_routing_by_receiving_number_and_messages_view(client, owner_token
     assert orders["total"] == 1 and orders["items"][0]["retailer"]["name"] == "Mama Nkechi"
 
     msgs = (await client.get("/api/v1/whatsapp/messages", headers=h)).json()
-    assert len(msgs) == 1
-    m = msgs[0]
+    assert [x["direction"] for x in msgs] == ["out", "in"]  # Sabi's reply, then the inbound that caused it
+    assert msgs[0]["outcome"] == "sent" and "Pay by transfer" in msgs[0]["text"]
+    m = msgs[1]
     assert (m["from_number"], m["sender_name"], m["kind"], m["text"]) == (
         "+2347010000000",
         "Mama Nkechi",
@@ -418,3 +419,14 @@ async def test_routing_by_receiving_number_and_messages_view(client, owner_token
         "20 bags MGR-50",
     )
     assert m["outcome"] == "order" and m["order_number"] == "LE-1001" and "Pay by transfer" in m["reply_text"]
+
+    # a person replies by hand from the Messages page; it lands in the same thread
+    r = await client.post(
+        "/api/v1/whatsapp/messages/send",
+        json={"to": "+2347010000000", "text": "Delivery is tomorrow morning."},
+        headers=h,
+    )
+    assert (
+        r.status_code == 201 and r.json()["direction"] == "out" and r.json()["text"] == "Delivery is tomorrow morning."
+    )
+    assert len((await client.get("/api/v1/whatsapp/messages", headers=h)).json()) == 3

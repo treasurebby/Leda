@@ -5,6 +5,7 @@ clarifying questions where a line is uncertain, and gives the retailer the accou
 """
 
 import logging
+import uuid
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -12,9 +13,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.claude import DecodedOrder
 from app.integrations.paystack import get_paystack
-from app.models import Business, Flag, FlagStatus, Order, Product, Retailer
+from app.integrations.whatsapp import WhatsAppClient
+from app.models import Business, Flag, FlagStatus, Order, Product, Retailer, WhatsAppMessage
 
 log = logging.getLogger(__name__)
+
+
+async def send_and_log(
+    db: AsyncSession, wa: WhatsAppClient, business_id, to: str, text: str, order_id=None, sent_by=None
+) -> None:
+    """Every outbound WhatsApp message is delivered and recorded, so the Messages page shows the whole thread."""
+    await wa.send_text(to, text)
+    db.add(
+        WhatsAppMessage(
+            business_id=business_id,
+            wa_message_id=f"out.{uuid.uuid4().hex}",
+            from_number=to,
+            kind="outbound",
+            payload={"text": text, "direction": "out", "sent_by": str(sent_by) if sent_by else "sabi"},
+            order_id=order_id,
+        )
+    )
+    await db.flush()
 
 
 def naira(value: Decimal | int) -> str:
