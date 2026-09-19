@@ -78,3 +78,24 @@ async def import_retailers(
 ) -> ImportJobOut:
     job = await start_import(ImportKind.retailers, file, db, tenant, tasks, session_factory)
     return ImportJobOut.model_validate(job)
+
+
+@router.post("/{retailer_id}/virtual-account", response_model=RetailerOut)
+async def provision_virtual_account(retailer_id: uuid.UUID, db: DB, tenant: Writer) -> RetailerOut:
+    """Create a Paystack dedicated virtual account so this retailer's transfers reconcile automatically."""
+    from app.integrations.paystack import get_paystack
+
+    retailer = await _get(db, tenant, retailer_id)
+    if retailer.dva_account_number:
+        return RetailerOut.model_validate(retailer)
+    email = retailer.email or f"{retailer.id.hex}@retailers.leda.africa"
+    try:
+        va = await get_paystack().create_virtual_account(email=email, name=retailer.name, phone=retailer.phone)
+    except Exception as exc:  # provider errors surface as 502 with the message
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Payment provider error: {exc}") from exc
+    retailer.paystack_customer_code = va.customer_code
+    retailer.dva_account_number = va.account_number
+    retailer.dva_bank = va.bank_name
+    retailer.account_reference = va.account_number
+    await db.commit()
+    return RetailerOut.model_validate(retailer)
