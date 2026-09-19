@@ -94,6 +94,7 @@ class OrderDetail(OrderSummary):
     evidence: list[EvidenceOut]
     flags: list[FlagOut]
     owner_user_id: uuid.UUID | None
+    reply_text: str | None
 
 
 class OrderCreate(BaseModel):

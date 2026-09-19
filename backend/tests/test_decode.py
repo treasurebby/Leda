@@ -75,6 +75,14 @@ async def test_voice_note_end_to_end(client, owner_token, sabi):
     assert order["status"] == "needs_review" and order["open_flags"] == 2
     assert order["retailer"]["id"] == retailer["id"]
 
+    # Sabi replied straight away: what it understood, its two questions, and no amount to pay yet
+    reply = wa.sent[-1]
+    assert reply[0] == "+2348052016042"
+    assert "Order LE-1001" in reply[1] and "50 × Royal Stallion" in reply[1] and "Quick check" in reply[1]
+    assert "1) 50 bags" in reply[1] and "2) 55 bags" in reply[1]
+    assert "Pay by transfer" not in reply[1]
+    assert order["reply_text"] == reply[1]
+
     kinds = [e["kind"] for e in order["evidence"]]
     assert kinds == ["voice", "transcript"]
     voice = order["evidence"][0]
@@ -93,6 +101,7 @@ async def test_voice_note_end_to_end(client, owner_token, sabi):
 
     flags = (await client.get("/api/v1/flags", headers=h)).json()
     assert {f["kind"] for f in flags} == {"voice", "slang"}
+    assert {f["status"] for f in flags} == {"asked_retailer"}
     slang = next(f for f in flags if f["kind"] == "slang")
     assert [o["sku"] for o in slang["options"]] == ["KVO-25R", "FSL-25"]
 

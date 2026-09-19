@@ -24,6 +24,7 @@ class InboundMessage:
     text: str | None = None
     media_id: str | None = None
     mime: str | None = None
+    sender_name: str | None = None  # WhatsApp profile name, from the payload's contacts[]
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -42,10 +43,15 @@ def parse_inbound(payload: dict[str, Any]) -> list[InboundMessage]:
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
+            names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts", [])}
             for msg in value.get("messages", []):
                 kind = msg.get("type")
                 item = InboundMessage(
-                    wa_message_id=msg["id"], from_number="+" + msg["from"].lstrip("+"), kind=kind or "other", raw=msg
+                    wa_message_id=msg["id"],
+                    from_number="+" + msg["from"].lstrip("+"),
+                    kind=kind or "other",
+                    raw=msg,
+                    sender_name=names.get(msg.get("from")),
                 )
                 if kind == "text":
                     item.text = msg.get("text", {}).get("body")

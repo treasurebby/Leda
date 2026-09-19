@@ -27,8 +27,9 @@ def _with_order(flag: Flag, order: Order) -> FlagWithOrder:
 
 @router.get("", response_model=list[FlagWithOrder])
 async def list_flags(
-    db: DB, tenant: CurrentTenant, status_filter: Annotated[FlagStatus | None, Query(alias="status")] = FlagStatus.open
+    db: DB, tenant: CurrentTenant, status_filter: Annotated[FlagStatus | None, Query(alias="status")] = None
 ) -> list[FlagWithOrder]:
+    """Without ?status= returns everything unresolved: open flags and questions already sent to the retailer."""
     stmt = (
         select(Flag, Order)
         .join(Order, Order.id == Flag.order_id)
@@ -36,8 +37,7 @@ async def list_flags(
         .where(Order.business_id == tenant.business_id)
         .order_by(Flag.created_at.desc())
     )
-    if status_filter:
-        stmt = stmt.where(Flag.status == status_filter)
+    stmt = stmt.where(Flag.status == status_filter if status_filter else Flag.status != FlagStatus.resolved)
     rows = (await db.execute(stmt)).all()
     return [_with_order(f, o) for f, o in rows]
 

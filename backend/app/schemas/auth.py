@@ -78,6 +78,7 @@ class BusinessSummary(ORMModel):
     custom_industry: str | None
     bridge_method: str | None
     whatsapp_number: str | None
+    auto_reply: bool = True
     onboarding_completed: bool
 
 

@@ -1,6 +1,6 @@
-"""The Sabi pipeline: evidence in, an order with confidence-scored lines and flags out.
+"""The Sabi pipeline: a WhatsApp message in, an order and/or an instant reply out.
 
-    ingest -> transcribe (voice) -> extract (Claude) -> persist -> notify
+    ingest -> transcribe (voice) -> extract (LLM) -> persist -> reply -> notify
 
 Each provider sits behind a Protocol, so this module is fully testable with fakes.
 """
@@ -14,13 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.claude import DecodedOrder, DecodeInput, Decoder
 from app.integrations.storage import Storage, new_key
+from app.integrations.whatsapp import WhatsAppClient
 from app.integrations.whisper import Transcriber
 from app.models import (
+    Business,
     Channel,
     Evidence,
     EvidenceKind,
     Flag,
     FlagKind,
+    FlagStatus,
     Notification,
     Order,
     OrderLine,
@@ -29,7 +32,9 @@ from app.models import (
     Retailer,
     ReviewState,
 )
+from app.services import ledger as ledger_svc
 from app.services import orders as order_svc
+from app.services import reply as reply_svc
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ class Signal:
     text: str | None = None
     audio: tuple[bytes, str] | None = None
     image: tuple[bytes, str] | None = None
+    sender_name: str | None = None
     raw: dict | None = None
 
 
@@ -50,27 +56,148 @@ class Providers:
     storage: Storage
     transcriber: Transcriber
     decoder: Decoder
+    whatsapp: WhatsAppClient
 
 
-async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal, providers: Providers) -> Order:
-    retailer = await db.scalar(
-        select(Retailer).where(Retailer.business_id == business_id, Retailer.phone == signal.from_number)
-    )
+@dataclass
+class DecodeResult:
+    order: Order | None
+    decoded: DecodedOrder
+    reply_text: str | None
+
+
+async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal, providers: Providers) -> DecodeResult:
+    business = await db.get(Business, business_id)
+    assert business is not None
+    retailer = await reply_svc.ensure_retailer(db, business, signal.from_number, signal.sender_name)
     channel = Channel.voice if signal.audio else Channel.photo if signal.image else Channel.text
-    order = Order(
-        business_id=business_id,
-        number=await order_svc.next_order_number(db, business_id),
-        retailer_id=retailer.id if retailer else None,
-        channel=channel,
-        status=OrderStatus.processing,
-        lines=[],
-        flags=[],
-        evidence=[],
-    )
-    db.add(order)
-    await db.flush()
 
-    # 1. Ingest: store every original signal untouched.
+    products = (await db.execute(select(Product).where(Product.business_id == business_id))).scalars().all()
+    by_sku = {p.sku: p for p in products}
+    catalog = [
+        {"sku": p.sku, "name": p.name, "unit": p.unit, "price": str(p.price), "aliases": p.aliases or []}
+        for p in products
+    ]
+
+    # 1. Transcribe voice notes. The transcript is kept verbatim as its own evidence row.
+    transcript = None
+    if signal.audio:
+        transcript = await providers.transcriber.transcribe(
+            signal.audio[0], signal.audio[1], [p.name for p in products]
+        )
+
+    # 2. Extract.
+    decoded = await providers.decoder.decode(
+        DecodeInput(
+            catalog=catalog,
+            retailer_name=retailer.name,
+            recent_skus=await _recent_skus(db, retailer),
+            transcript=transcript,
+            text=signal.text,
+            image=signal.image,
+        )
+    )
+
+    # 3. Persist an order only when they actually ordered something; store the original signals untouched.
+    order: Order | None = None
+    if decoded.lines:
+        order = Order(
+            business_id=business_id,
+            number=await order_svc.next_order_number(db, business_id),
+            retailer_id=retailer.id,
+            channel=channel,
+            status=OrderStatus.processing,
+            lines=[],
+            flags=[],
+            evidence=[],
+        )
+        db.add(order)
+        await db.flush()
+        await _store_evidence(db, order, business_id, signal, transcript, providers.storage)
+        _apply_lines(order, decoded, by_sku)
+        await db.flush()
+        _apply_flags(order, decoded)
+        order_svc.recompute(order)
+        await db.flush()
+
+    # 4. Reply on WhatsApp with what we understood, prices, questions, and where to pay.
+    reply_text: str | None = None
+    if business.auto_reply:
+        await reply_svc.ensure_virtual_account(db, retailer)
+        if order is not None and order.status == OrderStatus.processing:
+            # Nothing to check: raise the invoice now so the retailer's transfer can be matched when it lands.
+            await order_svc.confirm(db, order)
+            await ledger_svc.post_invoice(db, order)
+        reply_text = reply_svc.compose_reply(business, retailer, order, decoded, by_sku)
+        if order is not None:
+            for f in order.flags:
+                if f.status == FlagStatus.open:
+                    f.status = FlagStatus.asked_retailer
+            order.reply_text = reply_text
+        await providers.whatsapp.send_text(signal.from_number, reply_text)
+        await db.flush()
+
+    # 5. Notify the distributor.
+    if order is not None:
+        asked = sum(1 for f in order.flags if f.status != FlagStatus.resolved)
+        db.add(
+            Notification(
+                business_id=business_id,
+                kind="flag" if asked else "order",
+                order_id=order.id,
+                title=f"{order.number} needs your eye" if asked else f"{order.number} from {retailer.name}",
+                detail=(
+                    f"Sabi asked {retailer.name} {asked} question{'s' if asked != 1 else ''} "
+                    f"on the {channel.value} order"
+                    if asked
+                    else f"{len(order.lines)} lines, ₦{order.subtotal:,.0f} — invoice sent"
+                ),
+            )
+        )
+    elif decoded.inquiries:
+        db.add(
+            Notification(
+                business_id=business_id,
+                kind="order",
+                title=f"{retailer.name} asked about {len(decoded.inquiries)} item(s)",
+                detail=decoded.summary[:255],
+            )
+        )
+    await db.flush()
+    return DecodeResult(order=order, decoded=decoded, reply_text=reply_text)
+
+
+async def answer_question(
+    db: AsyncSession, business_id: uuid.UUID, retailer: Retailer, answer: int, providers: Providers
+) -> bool:
+    """A retailer replied with a number to one of Sabi's questions. Returns False if there was nothing to answer."""
+    found = await reply_svc.open_question_for(db, business_id, retailer.id)
+    if found is None:
+        return False
+    order, flag = found
+    if answer < 1 or answer > len(flag.options):
+        await providers.whatsapp.send_text(
+            retailer.phone or "", f"Please reply with a number between 1 and {len(flag.options)}."
+        )
+        return True
+    await order_svc.resolve_flag(db, order, flag, answer - 1, user_id=None)
+    remaining = [f for f in order.flags if f.status == FlagStatus.asked_retailer]
+    if remaining:
+        text = reply_svc.questions_block(remaining)
+    else:
+        if order.status == OrderStatus.processing:
+            await order_svc.confirm(db, order)
+            await ledger_svc.post_invoice(db, order)
+        text = reply_svc.invoice_reply(order, retailer)
+    order.reply_text = text
+    await providers.whatsapp.send_text(retailer.phone or "", text)
+    await db.flush()
+    return True
+
+
+async def _store_evidence(
+    db, order: Order, business_id, signal: Signal, transcript: str | None, storage: Storage
+) -> None:
     if signal.text:
         order.evidence.append(
             Evidence(order_id=order.id, kind=EvidenceKind.text, text=signal.text, raw_payload=signal.raw or {})
@@ -78,7 +205,7 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
     if signal.audio:
         content, mime = signal.audio
         key = new_key(business_id, "voice", mime)
-        await providers.storage.put(key, content, mime)
+        await storage.put(key, content, mime)
         order.evidence.append(
             Evidence(
                 order_id=order.id, kind=EvidenceKind.voice, storage_key=key, mime=mime, raw_payload=signal.raw or {}
@@ -87,71 +214,15 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
     if signal.image:
         content, mime = signal.image
         key = new_key(business_id, "photo", mime)
-        await providers.storage.put(key, content, mime)
+        await storage.put(key, content, mime)
         order.evidence.append(
             Evidence(
                 order_id=order.id, kind=EvidenceKind.photo, storage_key=key, mime=mime, raw_payload=signal.raw or {}
             )
         )
-    await db.flush()
-
-    products = (await db.execute(select(Product).where(Product.business_id == business_id))).scalars().all()
-    catalog = [
-        {"sku": p.sku, "name": p.name, "unit": p.unit, "price": str(p.price), "aliases": p.aliases or []}
-        for p in products
-    ]
-
-    # 2. Transcribe voice notes. The transcript is its own evidence row and is never edited afterwards.
-    transcript = None
-    if signal.audio:
-        transcript = await providers.transcriber.transcribe(
-            signal.audio[0], signal.audio[1], [p.name for p in products]
-        )
+    if transcript is not None:
         order.evidence.append(Evidence(order_id=order.id, kind=EvidenceKind.transcript, text=transcript))
-        await db.flush()
-
-    # 3. Extract with Claude.
-    recent = await _recent_skus(db, retailer)
-    decoded = await providers.decoder.decode(
-        DecodeInput(
-            catalog=catalog,
-            retailer_name=retailer.name if retailer else None,
-            recent_skus=recent,
-            transcript=transcript,
-            text=signal.text,
-            image=signal.image,
-        )
-    )
-    if retailer is None and decoded.retailer_guess:
-        order.retailer_name_guess = decoded.retailer_guess
-
-    # 4. Persist lines, then flags (flags reference lines by FK, so lines must exist first).
-    by_sku = {p.sku: p for p in products}
-    _apply_lines(order, decoded, by_sku)
     await db.flush()
-    _apply_flags(order, decoded)
-    order_svc.recompute(order)
-    await db.flush()
-
-    # 5. Notify.
-    open_flags = len(order.flags)
-    who = retailer.name if retailer else signal.from_number
-    db.add(
-        Notification(
-            business_id=business_id,
-            kind="flag" if open_flags else "order",
-            order_id=order.id,
-            title=f"{order.number} needs your eye" if open_flags else f"{order.number} decoded from {who}",
-            detail=(
-                f"Sabi flagged {open_flags} item{'s' if open_flags != 1 else ''} "
-                f"on the {channel.value} order from {who}"
-                if open_flags
-                else f"{len(order.lines)} lines, ₦{order.subtotal:,.0f}"
-            ),
-        )
-    )
-    await db.flush()
-    return order
 
 
 def _apply_lines(order: Order, decoded: DecodedOrder, by_sku: dict[str, Product]) -> None:

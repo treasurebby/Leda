@@ -58,12 +58,19 @@ async def simulate_whatsapp(
     session_factory: Annotated[object, Depends(get_session_factory)],
     from_number: Annotated[str, Form()],
     text: Annotated[str | None, Form()] = None,
+    sender_name: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
 ) -> Message:
     """Pretend a retailer sent a text, voice note (audio/*) or photo (image/*) to this business's number."""
     from app.jobs.decode_job import handle_inbound
 
-    msg = InboundMessage(wa_message_id=f"sim.{secrets.token_hex(8)}", from_number=from_number, kind="text", text=text)
+    msg = InboundMessage(
+        wa_message_id=f"sim.{secrets.token_hex(8)}",
+        from_number=from_number,
+        kind="text",
+        text=text,
+        sender_name=sender_name,
+    )
     if file is not None:
         content = await file.read()
         mime = file.content_type or "application/octet-stream"

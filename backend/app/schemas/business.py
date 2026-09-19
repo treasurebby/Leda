@@ -8,6 +8,7 @@ class BusinessUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     industry: str | None = Field(default=None, max_length=120)
     custom_industry: str | None = Field(default=None, max_length=120)
+    auto_reply: bool | None = None
 
 
 class BridgeUpdate(BaseModel):
