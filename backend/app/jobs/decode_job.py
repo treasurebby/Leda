@@ -26,7 +26,7 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
             from_number=message.from_number,
             kind=message.kind,
             media_id=message.media_id,
-            payload={k: v for k, v in message.raw.items() if k != "inline_media"},
+            payload={**{k: v for k, v in message.raw.items() if k != "inline_media"}, "text": message.text},
         )
         db.add(log_row)
         try:
