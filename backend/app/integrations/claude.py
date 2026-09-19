@@ -149,7 +149,7 @@ class FakeDecoder:
         if self.result is not None:
             return self.result
         skus = {p["sku"] for p in data.catalog}
-        by_alias = {a.lower(): p for p in data.catalog for a in p.get("aliases", [])}
+        aliases = [(a.lower(), p) for p in data.catalog for a in p.get("aliases", [])]
         text = " ".join(filter(None, [data.transcript, data.text])).lower()
         lines: list[DecodedLine] = []
         flags: list[DecodedFlag] = []
@@ -176,7 +176,7 @@ class FakeDecoder:
                     )
                 )
         if "yellow one" in text:
-            matches = [p for a, p in by_alias.items() if "yellow" in a]
+            matches = [p for a, p in aliases if "yellow" in a]
             if len(matches) >= 2:
                 lines.append(
                     DecodedLine(

@@ -160,6 +160,7 @@ def _apply(order: Order, decoded: DecodedOrder, by_sku: dict[str, Product]) -> N
             continue
         lines.append(
             OrderLine(
+                id=uuid.uuid4(),  # assigned now so flags can reference the line before flush
                 order_id=order.id,
                 position=position,
                 product_id=product.id,

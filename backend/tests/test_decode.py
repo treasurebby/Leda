@@ -233,7 +233,9 @@ async def test_live_claude_reads_the_order_slip():
             catalog=catalog,
             retailer_name="Okafor Provisions",
             recent_skus=["RSR-50"],
-            transcript="Send me like fifty bags of Royal Stallion, make e remain small. Add fifteen kegs of the yellow one.",
+            transcript=(
+                "Send me like fifty bags of Royal Stallion, make e remain small. Add fifteen kegs of the yellow one."
+            ),
             image=(SLIP.read_bytes(), "image/jpeg"),
         )
     )
