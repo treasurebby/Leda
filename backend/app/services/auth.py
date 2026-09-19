@@ -78,7 +78,8 @@ async def rotate_refresh_token(db: AsyncSession, raw: str) -> tuple[User, str, b
     if user is None or not user.is_active:
         raise AuthError("User not found")
     claimed = await db.execute(
-        update(RefreshToken).where(RefreshToken.id == row.id, RefreshToken.revoked_at.is_(None))
+        update(RefreshToken)
+        .where(RefreshToken.id == row.id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=utcnow())
     )
     if claimed.rowcount != 1:
@@ -110,7 +111,8 @@ async def request_password_reset(db: AsyncSession, email: str, mailer: EmailSend
     if recent:
         return
     await db.execute(
-        update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
         .values(used_at=now)
     )
     raw = new_opaque_token()
@@ -118,13 +120,16 @@ async def request_password_reset(db: AsyncSession, email: str, mailer: EmailSend
     db.add(row)
     link = f"{settings.public_app_url.rstrip('/')}/#/reset-password/{raw}"
     try:
-        await mailer.send(OutboundEmail(
-            to=user.email, subject="Reset your Leda password",
-            html=f'<p>Reset your Leda password using <a href="{escape(link, quote=True)}">this link</a>.</p>'
-                 "<p>It expires in 30 minutes and can be used once. "
-                 "If you did not request this, ignore this email.</p>",
-            text=f"Reset your Leda password: {link}\nThis link expires in 30 minutes and can be used once.",
-        ))
+        await mailer.send(
+            OutboundEmail(
+                to=user.email,
+                subject="Reset your Leda password",
+                html=f'<p>Reset your Leda password using <a href="{escape(link, quote=True)}">this link</a>.</p>'
+                "<p>It expires in 30 minutes and can be used once. "
+                "If you did not request this, ignore this email.</p>",
+                text=f"Reset your Leda password: {link}\nThis link expires in 30 minutes and can be used once.",
+            )
+        )
     except Exception:
         # Keep the public response identical for known and unknown accounts. Never log the token.
         await db.rollback()
@@ -142,7 +147,8 @@ async def reset_password(db: AsyncSession, raw: str, password: str) -> None:
     if user is None or not user.is_active:
         raise AuthError("This reset link is invalid or expired. Request a new one.")
     claimed = await db.execute(
-        update(PasswordResetToken).where(PasswordResetToken.id == row.id, PasswordResetToken.used_at.is_(None))
+        update(PasswordResetToken)
+        .where(PasswordResetToken.id == row.id, PasswordResetToken.used_at.is_(None))
         .values(used_at=now)
     )
     if claimed.rowcount != 1:

@@ -61,9 +61,9 @@ async def login(data: LoginRequest, db: DB, response: Response) -> TokenResponse
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     membership = await auth_service.primary_membership(db, user)
     _set_refresh_cookie(
-        response, await auth_service.issue_refresh_token(
-            db, user, data.remember, membership.business_id if membership else None
-        ), data.remember,
+        response,
+        await auth_service.issue_refresh_token(db, user, data.remember, membership.business_id if membership else None),
+        data.remember,
     )
     return _token_response(user, membership.business_id if membership else None)
 

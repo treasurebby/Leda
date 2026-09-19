@@ -11,7 +11,7 @@ from app.integrations.storage import get_storage
 from app.integrations.whatsapp import InboundMessage, get_whatsapp
 from app.integrations.whisper import get_transcriber
 from app.models import Business, Retailer, WhatsAppMessage
-from app.services.decode import Providers, Signal, decode_signal
+from app.services.decode import Providers, Signal, answer_question, decode_signal
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,30 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
             await db.commit()
             return
 
-        signal = Signal(from_number=message.from_number, text=message.text, raw=log_row.payload)
+        providers = Providers(get_storage(), get_transcriber(), get_decoder(), get_whatsapp())
+
+        # A bare number from a retailer with an open question is an answer, not a new order.
+        if message.kind == "text" and message.text and message.text.strip().isdigit():
+            retailer = await db.scalar(
+                select(Retailer).where(Retailer.business_id == business_id, Retailer.phone == message.from_number)
+            )
+            if retailer is not None:
+                try:
+                    if await answer_question(db, business_id, retailer, int(message.text.strip()), providers):
+                        await db.commit()
+                        return
+                except Exception as exc:
+                    log.exception("answer handling failed for %s", message.wa_message_id)
+                    await db.rollback()
+                    log_row = await db.get(WhatsAppMessage, log_row.id)
+                    if log_row is not None:
+                        log_row.error = str(exc)[:255]
+                        await db.commit()
+                    return
+
+        signal = Signal(
+            from_number=message.from_number, text=message.text, sender_name=message.sender_name, raw=log_row.payload
+        )
         if message.kind in ("audio", "image"):
             inline = message.raw.get("inline_media")
             if inline is not None:
@@ -64,10 +87,8 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
                 signal.image = (content, mime)
 
         try:
-            order = await decode_signal(
-                db, business_id, signal, Providers(get_storage(), get_transcriber(), get_decoder())
-            )
-            log_row.order_id = order.id
+            result = await decode_signal(db, business_id, signal, providers)
+            log_row.order_id = result.order.id if result.order else None
             await db.commit()
         except Exception as exc:
             log.exception("decode failed for %s", message.wa_message_id)

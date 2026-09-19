@@ -11,9 +11,14 @@ from tests.conftest import OWNER, auth, register
 async def test_remember_choice_survives_refresh(client):
     await register(client)
     for remember in (False, True):
-        response = await client.post("/api/v1/auth/login", json={
-            "email": OWNER["email"], "password": OWNER["password"], "remember": remember,
-        })
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": OWNER["email"],
+                "password": OWNER["password"],
+                "remember": remember,
+            },
+        )
         assert response.status_code == 200
         cookie = response.headers["set-cookie"].lower()
         assert "httponly" in cookie
@@ -45,9 +50,15 @@ async def test_password_recovery_end_to_end(client, mailer, db):
     client.cookies.set("leda_refresh", old_refresh, path="/api/v1/auth")
     assert (await client.post("/api/v1/auth/refresh")).status_code == 401
     assert (await client.post("/api/v1/auth/reset-password", json=payload)).status_code == 400
-    assert (await client.post("/api/v1/auth/login", json={
-        "email": OWNER["email"], "password": OWNER["password"],
-    })).status_code == 401
+    assert (
+        await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": OWNER["email"],
+                "password": OWNER["password"],
+            },
+        )
+    ).status_code == 401
     login = await client.post("/api/v1/auth/login", json={"email": OWNER["email"], "password": payload["password"]})
     assert login.status_code == 200
     assert (await client.get("/api/v1/auth/me", headers=auth(login.json()["access_token"]))).status_code == 200
@@ -57,21 +68,33 @@ async def test_reset_rejects_expiry_and_weak_password(client, mailer, db):
     await register(client)
     await client.post("/api/v1/auth/forgot-password", json={"email": OWNER["email"]})
     raw = mailer.sent[0].text.split("/#/reset-password/")[1].split()[0]
-    assert (await client.post("/api/v1/auth/reset-password", json={"token": raw, "password": "short"})).status_code == 422
+    assert (
+        await client.post("/api/v1/auth/reset-password", json={"token": raw, "password": "short"})
+    ).status_code == 422
     row = await db.scalar(select(PasswordResetToken))
     row.expires_at = utcnow() - timedelta(seconds=1)
     await db.commit()
-    assert (await client.post("/api/v1/auth/reset-password", json={
-        "token": raw, "password": "Another pass 1",
-    })).status_code == 400
+    assert (
+        await client.post(
+            "/api/v1/auth/reset-password",
+            json={
+                "token": raw,
+                "password": "Another pass 1",
+            },
+        )
+    ).status_code == 400
 
 
 async def test_setup_completion_persists(client):
     token = await register(client)
-    assert (await client.get("/api/v1/auth/me", headers=auth(token))).json()["business"]["onboarding_completed"] is False
+    assert (await client.get("/api/v1/auth/me", headers=auth(token))).json()["business"][
+        "onboarding_completed"
+    ] is False
     assert (await client.post("/api/v1/business/complete-setup", headers=auth(token))).status_code == 400
     await client.patch("/api/v1/business/bridge", json={"method": "virtual"}, headers=auth(token))
-    assert (await client.post("/api/v1/business/complete-setup", headers=auth(token))).json()["onboarding_completed"] is True
+    assert (await client.post("/api/v1/business/complete-setup", headers=auth(token))).json()[
+        "onboarding_completed"
+    ] is True
     assert (await client.get("/api/v1/auth/me", headers=auth(token))).json()["business"]["onboarding_completed"] is True
 
 

@@ -25,7 +25,7 @@ Writer = Annotated[Tenant, Depends(require("orders:write"))]
 def to_detail(order: Order) -> OrderDetail:
     detail = OrderDetail.model_validate(order)
     detail.item_count = sum(line.quantity for line in order.lines)
-    detail.open_flags = sum(1 for f in order.flags if f.status == FlagStatus.open)
+    detail.open_flags = sum(1 for f in order.flags if f.status != FlagStatus.resolved)
     detail.evidence = [EvidenceOut.model_validate(e) for e in order.evidence]
     for ev, row in zip(detail.evidence, order.evidence, strict=True):
         if row.storage_key:
@@ -69,7 +69,7 @@ async def list_orders(
     for order in rows:
         s = OrderSummary.model_validate(order)
         s.item_count = sum(line.quantity for line in order.lines)
-        s.open_flags = sum(1 for f in order.flags if f.status == FlagStatus.open)
+        s.open_flags = sum(1 for f in order.flags if f.status != FlagStatus.resolved)
         items.append(s)
     return Page(items=items, total=total or 0)
 

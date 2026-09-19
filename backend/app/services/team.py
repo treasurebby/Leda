@@ -99,9 +99,9 @@ async def accept_invite(db: AsyncSession, raw_token: str, data: InviteAccept) ->
         )
         db.add(user)
         await db.flush()
-    existing = await db.scalar(select(Membership).where(
-        Membership.user_id == user.id, Membership.business_id == invite.business_id
-    ))
+    existing = await db.scalar(
+        select(Membership).where(Membership.user_id == user.id, Membership.business_id == invite.business_id)
+    )
     if existing is None:
         db.add(Membership(user_id=user.id, business_id=invite.business_id, role=invite.role))
     invite.accepted_at = utcnow()

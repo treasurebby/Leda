@@ -46,6 +46,8 @@ class Order(TimestampMixin, Base):
     retailer_name_guess: Mapped[str | None] = mapped_column(String(120))
     confirmed_at: Mapped[datetime | None] = mapped_column(TZDateTime)
     paid_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+    # The automatic WhatsApp reply Leda sent for this message, kept for the audit trail.
+    reply_text: Mapped[str | None] = mapped_column(Text)
 
     lines: Mapped[list["OrderLine"]] = relationship(
         back_populates="order", cascade="all, delete-orphan", order_by="OrderLine.position"

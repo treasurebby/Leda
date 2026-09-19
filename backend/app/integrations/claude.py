@@ -6,6 +6,7 @@ and OpenAIDecoder. Pick with the DECODER setting; "auto" uses whichever key is c
 
 import base64
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
@@ -37,9 +38,24 @@ class DecodedFlag(BaseModel):
     confidence: int = Field(ge=0, le=100)
 
 
+class DecodedInquiry(BaseModel):
+    """A 'do you have X?' style question, matched to the catalog where possible."""
+
+    query: str = Field(description="What the retailer asked about, in their words.")
+    sku: str | None = Field(description="Matching catalog SKU, or null if nothing in the catalog fits.")
+
+
 class DecodedOrder(BaseModel):
+    intent: Literal["order", "inquiry", "mixed", "other"] = Field(
+        description="order = they want to buy; inquiry = asking availability/price; mixed = both; other = greeting, "
+        "complaint, or unrelated."
+    )
     retailer_guess: str | None = Field(description="Retailer or shop name if the message says it, else null.")
-    lines: list[DecodedLine]
+    lines: list[DecodedLine] = Field(description="Items they want to buy. Empty for a pure inquiry.")
+    inquiries: list[DecodedInquiry] = Field(default_factory=list, description="Availability/price questions.")
+    unmatched: list[str] = Field(
+        default_factory=list, description="Items mentioned that are not in the catalog (e.g. 'cucumber')."
+    )
     flags: list[DecodedFlag]
     summary: str = Field(description="One sentence summary of what the retailer wants.")
 
@@ -74,7 +90,10 @@ Rules:
   raise a 'photo' flag when the match is below 85.
 - Confidence below 85 on a line means a human must check it; the distributor's money is on the line, so prefer a
   flag over a confident guess. Mention the naira difference between options in 'why' when you can compute it.
-- Never invent products, retailers, or prices."""
+- Never invent products, retailers, or prices.
+- Distinguish intent. "Do you have onion?" or "how much is rice?" is an inquiry: put it in inquiries with the
+  matching SKU (or null). "Send me 20 bags" is an order line. A message can be both. Anything requested that is not
+  in the catalog goes in unmatched, in the retailer's words, so the reply can say it is not stocked."""
 
 
 def _catalog_block(catalog: list[dict]) -> str:
@@ -276,7 +295,30 @@ class FakeDecoder:
             for sku in skus:
                 if sku.lower() in text:
                     lines.append(DecodedLine(sku=sku, quantity=20, confidence=96, reasoning="SKU named in message"))
-        return DecodedOrder(retailer_guess=None, lines=lines, flags=flags, summary="fake decode")
+        inquiries: list[DecodedInquiry] = []
+        unmatched: list[str] = []
+        if "do you have" in text or "how much" in text:
+            # "do you have tomato? how much is rice?" -> one inquiry per catalog name/alias found, else unmatched.
+            asked = re.split(r"do you have|how much is|how much for|[?,.]", text)
+            for phrase in (a.strip() for a in asked if a.strip()):
+                hit = next((p for p in data.catalog if phrase in p["name"].lower()), None) or next(
+                    (p for a, p in aliases if phrase == a), None
+                )
+                if hit:
+                    inquiries.append(DecodedInquiry(query=phrase, sku=hit["sku"]))
+                elif phrase not in {"the", "this", "it", "and", "please", "abeg"}:
+                    unmatched.append(phrase)
+                    inquiries.append(DecodedInquiry(query=phrase, sku=None))
+        intent = "mixed" if lines and inquiries else "order" if lines else "inquiry" if inquiries else "other"
+        return DecodedOrder(
+            intent=intent,
+            retailer_guess=None,
+            lines=lines,
+            inquiries=inquiries,
+            unmatched=unmatched,
+            flags=flags,
+            summary="fake decode",
+        )
 
 
 _default: Decoder | None = None

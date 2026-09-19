@@ -24,6 +24,8 @@ class Business(TimestampMixin, Base):
     whatsapp_number: Mapped[str | None] = mapped_column(String(32), index=True)
     # Per-business counter for human-readable order numbers (LE-1041). Bumped inside a row lock.
     next_order_number: Mapped[int] = mapped_column(Integer, default=1001)
+    # Reply to every inbound WhatsApp message with what Sabi understood, prices, and payment details.
+    auto_reply: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="business")  # noqa: F821
