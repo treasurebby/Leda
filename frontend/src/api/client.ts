@@ -2,7 +2,9 @@ import type { components, paths } from "./types.gen";
 
 export type Schemas = components["schemas"];
 export type Paths = paths;
-const API_ORIGIN = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+// Production uses the Vercel same-origin rewrite, avoiding browser CORS checks.
+const configuredApiOrigin = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+const API_ORIGIN = import.meta.env.PROD ? "" : configuredApiOrigin;
 export const API_BASE = `${API_ORIGIN}/api/v1`;
 export const SESSION_EXPIRED = "leda:session-expired";
 const TOKEN_KEY = "leda.access";
