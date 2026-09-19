@@ -7,6 +7,10 @@ export function updateBridge(method: "current" | "virtual", phone: string | null
   return api.patch<Schemas["BusinessSummary"]>("/business/bridge", { method, phone });
 }
 
+export function updateBusiness(data: { name: string; industry: string }) {
+  return api.patch<Schemas["BusinessSummary"]>("/business", data);
+}
+
 export async function startImport(kind: "products" | "retailers", file: File | Blob, fileName: string) {
   const path = kind === "products" ? "/products/import" : "/retailers/import";
   return api.upload<ImportJob>(path, file, fileName);

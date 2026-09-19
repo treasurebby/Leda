@@ -7,6 +7,7 @@ import {
   Settings, ShieldAlert, Sparkles, Store, TrendingUp, TriangleAlert, Users, Wallet, X,
 } from "lucide-react";
 import Workspaces from "./Workspaces";
+import SettingsPage from "./SettingsPage";
 import type { Me } from "../api/auth";
 import { useSession } from "../auth/Session";
 import "./dashboard.css";
@@ -350,6 +351,7 @@ export default function Dashboard({ account }: { account: Me }) {
     retailers: "Search retailers and markets",
     payments: "Search payment references",
     ledger: "Search ledger entries",
+    settings: "Search settings",
   };
 
   function confirmFlag(flag: Flag) {
@@ -456,7 +458,9 @@ export default function Dashboard({ account }: { account: Me }) {
         </header>
 
         <main className="dash-main">
-          {active !== "dashboard" && isWorkspace ? (
+          {active === "settings" ? (
+            <SettingsPage account={account} />
+          ) : active !== "dashboard" && isWorkspace ? (
             <Workspaces active={active as "orders" | "inventory" | "retailers" | "payments" | "ledger"} query={query} />
           ) : active !== "dashboard" && activeLabel ? (
             <div className="dash-preview">
