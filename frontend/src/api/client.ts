@@ -2,7 +2,8 @@ import type { components, paths } from "./types.gen";
 
 export type Schemas = components["schemas"];
 export type Paths = paths;
-export const API_BASE = "/api/v1";
+const API_ORIGIN = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+export const API_BASE = `${API_ORIGIN}/api/v1`;
 export const SESSION_EXPIRED = "leda:session-expired";
 const TOKEN_KEY = "leda.access";
 const SIGNED_OUT_KEY = "leda.signed-out";
