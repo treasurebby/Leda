@@ -5,7 +5,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, computed_field
 
 from app.models import Channel, EvidenceKind, FlagKind, FlagStatus, OrderStatus, ReviewState
-from app.schemas.common import ORMModel
+from app.schemas.common import Money, ORMModel
 
 
 class LineIn(BaseModel):
@@ -26,14 +26,14 @@ class LineOut(ORMModel):
     sku: str | None
     unit: str | None
     quantity: int
-    unit_price: Decimal
+    unit_price: Money
     confidence_score: int
     review_state: ReviewState
     reasoning: str | None
 
     @computed_field
     @property
-    def total(self) -> Decimal:
+    def total(self) -> Money:
         return self.unit_price * self.quantity
 
 
@@ -79,7 +79,7 @@ class OrderSummary(ORMModel):
     number: str
     channel: Channel
     status: OrderStatus
-    subtotal: Decimal
+    subtotal: Money
     retailer: RetailerBrief | None
     retailer_name_guess: str | None
     created_at: datetime
@@ -118,9 +118,9 @@ class DashboardSummary(BaseModel):
     orders_yesterday: int
     pending_verifications: int
     verification_breakdown: dict[str, int]  # ai_flag / transfer / duplicate
-    receivables: Decimal
-    invoiced: Decimal
-    collected: Decimal
+    receivables: Money
+    invoiced: Money
+    collected: Money
 
 
 class NotificationOut(ORMModel):

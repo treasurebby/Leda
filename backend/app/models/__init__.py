@@ -14,6 +14,7 @@ from app.models.order import (
     OrderStatus,
     ReviewState,
 )
+from app.models.payment import LedgerEntry, LedgerKind, Payment, PaymentStatus
 from app.models.user import ROLE_LABELS, Invite, Membership, RefreshToken, Role, User
 
 __all__ = [
@@ -30,11 +31,15 @@ __all__ = [
     "ImportKind",
     "ImportStatus",
     "Invite",
+    "LedgerEntry",
+    "LedgerKind",
     "Membership",
     "Notification",
     "Order",
     "OrderLine",
     "OrderStatus",
+    "Payment",
+    "PaymentStatus",
     "Product",
     "RefreshToken",
     "Retailer",

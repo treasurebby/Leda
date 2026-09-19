@@ -16,8 +16,11 @@ Writer = Annotated[Tenant, Depends(require("orders:write"))]
 
 def _with_order(flag: Flag, order: Order) -> FlagWithOrder:
     out = FlagWithOrder.model_validate(
-        {**{c.name: getattr(flag, c.name) for c in Flag.__table__.columns}, "order_number": order.number,
-         "retailer_name": order.retailer.name if order.retailer else order.retailer_name_guess}
+        {
+            **{c.name: getattr(flag, c.name) for c in Flag.__table__.columns},
+            "order_number": order.number,
+            "retailer_name": order.retailer.name if order.retailer else order.retailer_name_guess,
+        }
     )
     return out
 
@@ -80,5 +83,3 @@ async def reopen(flag_id: uuid.UUID, db: DB, tenant: Writer) -> FlagWithOrder:
     await svc.reopen_flag(order, flag)
     await db.commit()
     return _with_order(flag, order)
-
-

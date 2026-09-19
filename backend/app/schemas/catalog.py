@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.security import normalise_phone
 from app.models import ImportKind, ImportStatus, RetailerTier
-from app.schemas.common import ORMModel
+from app.schemas.common import Money, ORMModel
 
 
 class ProductIn(BaseModel):
@@ -40,7 +40,7 @@ class ProductOut(ORMModel):
     sku: str
     name: str
     unit: str | None
-    price: Decimal
+    price: Money
     stock: int
     reserved: int
     reorder_level: int

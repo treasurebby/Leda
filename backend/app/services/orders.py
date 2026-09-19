@@ -90,6 +90,9 @@ async def create_manual_order(
         retailer_id=retailer_id,
         channel=Channel.manual,
         owner_user_id=user_id,
+        lines=[],
+        flags=[],
+        evidence=[],
     )
     db.add(order)
     await db.flush()

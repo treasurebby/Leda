@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 
 from app.core.deps import DB, CurrentTenant, Tenant, require
 from app.models import FlagStatus, Order, OrderStatus, Retailer
+from app.schemas.catalog import Page
 from app.schemas.orders import (
     ConfirmRequest,
     EvidenceOut,
@@ -15,7 +16,6 @@ from app.schemas.orders import (
     OrderDetail,
     OrderSummary,
 )
-from app.schemas.catalog import Page
 from app.services import orders as svc
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -55,10 +55,16 @@ async def list_orders(
     if q:
         like = f"%{q.lower().lstrip('#')}%"
         stmt = stmt.outerjoin(Retailer, Retailer.id == Order.retailer_id).where(
-            or_(func.lower(Order.number).like(like), func.lower(Retailer.name).like(like), func.lower(Retailer.market).like(like))
+            or_(
+                func.lower(Order.number).like(like),
+                func.lower(Retailer.name).like(like),
+                func.lower(Retailer.market).like(like),
+            )
         )
     total = await db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
-    rows = (await db.execute(stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset))).scalars().unique().all()
+    rows = (
+        (await db.execute(stmt.order_by(Order.created_at.desc()).limit(limit).offset(offset))).scalars().unique().all()
+    )
     items = []
     for order in rows:
         s = OrderSummary.model_validate(order)
@@ -133,5 +139,3 @@ async def cancel_order(ref: str, db: DB, tenant: Writer) -> OrderDetail:
     order.status = OrderStatus.cancelled
     await db.commit()
     return to_detail(order)
-
-
