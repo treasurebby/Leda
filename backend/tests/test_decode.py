@@ -151,20 +151,94 @@ async def test_photo_and_text_paths(client, owner_token, sabi):
     )
     order = (await client.get("/api/v1/orders/LE-1002", headers=h)).json()
     assert order["channel"] == "text" and order["evidence"][0]["text"] == "20 bags MGR-50"
-    assert order["status"] == "processing" and order["lines"][0]["review_state"] == "sure"
+    # nothing to check -> invoiced immediately so the transfer can match
+    assert order["status"] == "pending" and order["lines"][0]["review_state"] == "sure"
+    assert "Pay by transfer" in order["reply_text"] and "Reference: LE-1002" in order["reply_text"]
+    assert (await client.get("/api/v1/dashboard/summary", headers=h)).json()["invoiced"] == "1544000.00"
 
 
-async def test_unknown_sender_gets_unlinked_order(client, owner_token, sabi):
+async def test_unknown_sender_becomes_a_retailer_with_an_account(client, owner_token, sabi):
+    from app.integrations.paystack import FakePaystack, set_paystack
+
+    set_paystack(FakePaystack())
     h = auth(owner_token)
     await seed(client, owner_token)
     r = await client.post(
-        "/api/v1/dev/simulate/whatsapp", data={"from_number": "+2347000000000", "text": "20 bags MGR-50"}, headers=h
+        "/api/v1/dev/simulate/whatsapp",
+        data={"from_number": "+2347000000000", "text": "20 bags MGR-50", "sender_name": "Mama Nkechi"},
+        headers=h,
     )
     assert r.status_code == 202
     order = (await client.get("/api/v1/orders/LE-1001", headers=h)).json()
-    assert order["retailer"] is None
-    # confirming needs a retailer attached
-    assert (await client.post(f"/api/v1/orders/{order['id']}/confirm", json={}, headers=h)).status_code == 400
+    assert order["retailer"]["name"] == "Mama Nkechi" and order["retailer"]["phone"] == "+2347000000000"
+    retailers = (await client.get("/api/v1/retailers?q=nkechi", headers=h)).json()["items"]
+    assert retailers[0]["dva_account_number"] == "9900000001"  # provisioned on the spot
+    assert "9900000001" in order["reply_text"]
+    set_paystack(None)
+
+
+async def test_inquiry_gets_prices_without_creating_an_order(client, owner_token, sabi):
+    _, _, _, wa = sabi
+    h = auth(owner_token)
+    await seed(client, owner_token)
+    r = await client.post(
+        "/api/v1/dev/simulate/whatsapp",
+        data={
+            "from_number": "+2348052016042",
+            "text": "Do you have kings vegetable oil? How much is mama gold? Do you have cucumber?",
+        },
+        headers=h,
+    )
+    assert r.status_code == 202
+    assert (await client.get("/api/v1/orders", headers=h)).json()["total"] == 0
+    reply = wa.sent[-1][1]
+    assert "✓ Kings Vegetable Oil (Keg 25L): ₦96,500" in reply
+    assert "✓ Mama Gold Premium Rice (Bag 50kg): ₦77,200" in reply
+    assert "✗ Cucumber: not currently stocked." in reply
+    assert "quantities" in reply
+
+
+async def test_retailer_answers_questions_by_number(client, owner_token, sabi):
+    _, _, _, wa = sabi
+    h = auth(owner_token)
+    await seed(client, owner_token)
+    await client.post(
+        "/api/v1/dev/simulate/whatsapp",
+        data={"from_number": "+2348052016042"},
+        files={"file": ("note.ogg", b"OggS", "audio/ogg")},
+        headers=h,
+    )
+    assert "Quick check" in wa.sent[-1][1]
+
+    # out-of-range answer is bounced
+    await client.post("/api/v1/dev/simulate/whatsapp", data={"from_number": "+2348052016042", "text": "7"}, headers=h)
+    assert "between 1 and 2" in wa.sent[-1][1]
+
+    # first answer resolves the first question and re-asks the remaining one
+    await client.post("/api/v1/dev/simulate/whatsapp", data={"from_number": "+2348052016042", "text": "2"}, headers=h)
+    assert "Quick check" in wa.sent[-1][1]
+    # second answer -> invoice with payment details, order confirmed and invoiced
+    await client.post("/api/v1/dev/simulate/whatsapp", data={"from_number": "+2348052016042", "text": "2"}, headers=h)
+    final = wa.sent[-1][1]
+    assert "Total:" in final and "Reference: LE-1001" in final
+    order = (await client.get("/api/v1/orders/LE-1001", headers=h)).json()
+    assert order["status"] == "pending" and order["open_flags"] == 0
+    assert (order["lines"][0]["quantity"], order["lines"][1]["sku"]) == (55, "FSL-25")
+    assert (await client.get("/api/v1/orders", headers=h)).json()["total"] == 1  # the digits never became orders
+
+
+async def test_auto_reply_can_be_switched_off(client, owner_token, sabi):
+    _, _, _, wa = sabi
+    h = auth(owner_token)
+    await seed(client, owner_token)
+    r = await client.patch("/api/v1/business", json={"auto_reply": False}, headers=h)
+    assert r.status_code == 200 and r.json()["auto_reply"] is False
+    await client.post(
+        "/api/v1/dev/simulate/whatsapp", data={"from_number": "+2348052016042", "text": "20 bags MGR-50"}, headers=h
+    )
+    assert wa.sent == []
+    order = (await client.get("/api/v1/orders/LE-1001", headers=h)).json()
+    assert order["status"] == "processing" and order["reply_text"] is None
 
 
 async def test_whatsapp_webhook_verify_dedupe_and_routing(client, owner_token, sabi, monkeypatch):
