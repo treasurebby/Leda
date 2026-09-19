@@ -16,6 +16,7 @@ from app.models.order import (
 )
 from app.models.payment import LedgerEntry, LedgerKind, Payment, PaymentStatus
 from app.models.user import ROLE_LABELS, Invite, Membership, RefreshToken, Role, User
+from app.models.whatsapp import WhatsAppMessage
 
 __all__ = [
     "ROLE_LABELS",
@@ -47,4 +48,5 @@ __all__ = [
     "ReviewState",
     "Role",
     "User",
+    "WhatsAppMessage",
 ]

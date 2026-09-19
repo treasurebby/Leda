@@ -6,6 +6,7 @@ from app.api.v1 import (
     dashboard,
     flags,
     ledger,
+    media,
     orders,
     payments,
     products,
@@ -27,6 +28,7 @@ router.include_router(dashboard.router)
 router.include_router(payments.router)
 router.include_router(ledger.router)
 router.include_router(webhooks.router)
+router.include_router(media.router)
 
 if settings.is_dev:
     from app.api.v1 import dev
