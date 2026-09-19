@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import utcnow
-from app.core.security import hash_password, hash_token, new_opaque_token
+from app.core.security import hash_password, hash_token, new_opaque_token, verify_password
 from app.integrations.email import EmailSender, OutboundEmail
 from app.models import Business, Invite, Membership, Role, User
 from app.schemas.team import InviteAccept, InviteCreate, MemberOut
@@ -88,6 +88,8 @@ async def accept_invite(db: AsyncSession, raw_token: str, data: InviteAccept) ->
         raise TeamError("This invitation is invalid or has expired")
 
     user = await db.scalar(select(User).where(User.email == invite.email))
+    if user is not None and (not user.is_active or not verify_password(data.password, user.password_hash)):
+        raise TeamError("You already have a Leda account. Enter your existing password to accept this invitation.")
     if user is None:
         user = User(
             email=invite.email,
@@ -97,7 +99,11 @@ async def accept_invite(db: AsyncSession, raw_token: str, data: InviteAccept) ->
         )
         db.add(user)
         await db.flush()
-    db.add(Membership(user_id=user.id, business_id=invite.business_id, role=invite.role))
+    existing = await db.scalar(select(Membership).where(
+        Membership.user_id == user.id, Membership.business_id == invite.business_id
+    ))
+    if existing is None:
+        db.add(Membership(user_id=user.id, business_id=invite.business_id, role=invite.role))
     invite.accepted_at = utcnow()
     await db.commit()
     business = await db.get(Business, invite.business_id)

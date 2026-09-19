@@ -13,6 +13,7 @@ type Draft = Omit<SetupData, "identity"> & {
   version: 1;
   savedAt: number;
   step: number;
+  accountCreated?: boolean;
   identity: Omit<Identity, "password">;
 };
 
@@ -35,9 +36,9 @@ export function safeSummary(data: SetupData) {
   };
 }
 
-export function saveDraft(data: SetupData, step: number) {
+export function saveDraft(data: SetupData, step: number, accountCreated = false) {
   // Draft saving is explicit; neither owner nor staff passwords are serialized.
-  const draft: Draft = { ...safeSummary(data), version: 1, savedAt: Date.now(), step };
+  const draft: Draft = { ...safeSummary(data), version: 1, savedAt: Date.now(), step, accountCreated };
   localStorage.setItem(KEY, JSON.stringify(draft));
 }
 

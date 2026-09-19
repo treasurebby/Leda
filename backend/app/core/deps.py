@@ -25,6 +25,8 @@ async def current_user(db: DB, creds: Annotated[HTTPAuthorizationCredentials | N
     user = await db.get(User, uuid.UUID(payload["sub"]))
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
+    if payload.get("ver", 0) != user.auth_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired. Sign in again")
     return user
 
 

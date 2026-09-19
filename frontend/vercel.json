@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://leda-399h.vercel.app/api/:path*" }
+  ]
+}

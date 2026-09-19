@@ -14,7 +14,7 @@ export default defineConfig({
   server: {
     proxy: {
       // The FastAPI backend (backend/scripts/dev.sh) during local development.
-      "/api": { target: "http://localhost:8000", changeOrigin: false },
+      "/api": { target: process.env.LEDA_API_TARGET || "http://localhost:8000", changeOrigin: false },
     },
   },
   resolve: {

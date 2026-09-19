@@ -7,7 +7,8 @@ import {
   Settings, ShieldAlert, Sparkles, Store, TrendingUp, TriangleAlert, Users, Wallet, X,
 } from "lucide-react";
 import Workspaces from "./Workspaces";
-import { logout, me, type Me } from "../api/auth";
+import type { Me } from "../api/auth";
+import { useSession } from "../auth/Session";
 import "./dashboard.css";
 
 /* ------------------------------------------------------------------ data */
@@ -40,7 +41,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
 ];
 
 type Session = { name: string; initials: string; role: string; business: string; detail: string };
-const DEMO_SESSION: Session = { name: "Ada Okoro", initials: "AO", role: "Owner", business: "Okoro Wholesale Ltd", detail: "Foodstuff & groceries · Trade Fair, Lagos" };
 const ROLE_LABEL: Record<string, string> = { owner: "Owner", admin: "Administrator", ops: "Operations manager", sales: "Sales representative", accountant: "Accountant", warehouse: "Warehouse staff", viewer: "Viewer" };
 function toSession(m: Me): Session {
   const parts = m.user.full_name.trim().split(/\s+/);
@@ -49,11 +49,6 @@ function toSession(m: Me): Session {
     business: m.business.name, detail: m.business.custom_industry || m.business.industry,
   };
 }
-
-const BUSINESSES = [
-  { name: "Okoro Wholesale Ltd", detail: "Foodstuff & groceries · Trade Fair, Lagos", verified: true },
-  { name: "Okoro Provisions Ibadan", detail: "Grains & cereals · Gbagi, Ibadan", verified: true },
-];
 
 type Channel = "Voice note" | "Text order" | "Photo";
 const ORDERS: {
@@ -163,6 +158,7 @@ function SidebarContent({ active, onSelect, business, unread, pending, onSignOut
   onSignOut: () => void;
   session: Session;
 }) {
+  const businesses = [{ name: session.business, detail: session.detail }];
   const [switcher, setSwitcher] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   useDismiss(switcher, wrap, () => setSwitcher(false));
@@ -182,8 +178,8 @@ function SidebarContent({ active, onSelect, business, unread, pending, onSignOut
         <div className="dash-business" ref={wrap}>
           <button type="button" className="dash-business-button" aria-haspopup="menu" aria-expanded={switcher} onClick={() => setSwitcher(open => !open)}>
             <div className="dash-business-copy">
-              <strong>{BUSINESSES[business].name}</strong>
-              <span><BadgeCheck size={11} />Verified distributor</span>
+              <strong>{session.business}</strong>
+              <span><BadgeCheck size={11} />Your workspace</span>
             </div>
             <ChevronDown size={15} style={{ color: "rgba(231,241,233,.6)" }} />
           </button>
@@ -191,7 +187,7 @@ function SidebarContent({ active, onSelect, business, unread, pending, onSignOut
             {switcher && (
               <motion.div className="dash-popover dash-popover-dark" role="menu" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.16 }}>
                 <p>Switch workspace</p>
-                {BUSINESSES.map((item, index) => (
+                {businesses.map((item, index) => (
                   <button key={item.name} type="button" role="menuitem" className={`dash-business-option${index === business ? " dash-business-option-active" : ""}`} onClick={() => { onSelect(`__business:${index}`); setSwitcher(false); }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p>{item.name}</p>
@@ -275,7 +271,7 @@ function KpiTile({ label, icon: Icon, accent, tint, bg, value, valueSuffix, meta
 }
 
 /* ------------------------------------------------------------------ dashboard */
-export default function Dashboard() {
+export default function Dashboard({ account }: { account: Me }) {
   const [active, setActive] = useState("dashboard");
   const [business, setBusiness] = useState(0);
   const [query, setQuery] = useState("");
@@ -288,8 +284,8 @@ export default function Dashboard() {
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [asked, setAsked] = useState<string[]>([]);
   const [resolved, setResolved] = useState<{ id: string; label: string; retailer: string }[]>([]);
-  const [session, setSession] = useState<Session>(DEMO_SESSION);
-  const [signedIn, setSignedIn] = useState(false);
+  const session = toSession(account);
+  const { signOut: endSession } = useSession();
   const searchRef = useRef<HTMLInputElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -297,15 +293,7 @@ export default function Dashboard() {
   const attentionRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
 
-  /* Show the real signed-in user when there is a session; the demo persona otherwise. */
-  useEffect(() => {
-    void me().then(m => { if (m) { setSession(toSession(m)); setSignedIn(true); } });
-  }, []);
-
-  async function signOut() {
-    if (signedIn) await logout();
-    window.location.hash = "/welcome";
-  }
+  function signOut() { void endSession().catch(() => undefined); }
 
   useDismiss(bellOpen, bellRef, () => setBellOpen(false));
   useDismiss(profileOpen, profileRef, () => setProfileOpen(false));
@@ -407,7 +395,7 @@ export default function Dashboard() {
           <button type="button" className="dash-menu-button" aria-label="Open navigation" onClick={() => setDrawer(true)}><Menu size={18} /></button>
           <div className="dash-header-titles">
             <h1>{activeLabel?.label ?? "Command Center"}</h1>
-            <p>{BUSINESSES[business].name} · {BUSINESSES[business].detail.split(" · ")[1]}</p>
+            <p>{session.business} · {session.detail}</p>
           </div>
 
           <div className="dash-search">
@@ -484,7 +472,7 @@ export default function Dashboard() {
               <div className="dash-content-head">
                 <div>
                   <h2><Greeting name={session.name.split(" ")[0]} /></h2>
-                  <p>{new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long" })} · {BUSINESSES[business].name} · updated just now</p>
+                  <p>{new Date().toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long" })} · {session.business} · updated just now</p>
                 </div>
                 <div className="dash-content-actions">
                   <button type="button" className="dash-button-ghost" onClick={() => {

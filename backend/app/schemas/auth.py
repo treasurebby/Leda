@@ -37,7 +37,24 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
+    remember: bool = True
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=128)
+    password: str = Field(max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def _password(cls, value: str) -> str:
+        if not valid_password(value):
+            raise ValueError("Use at least 8 characters, with a letter and a number.")
+        return value
 
 
 class TokenResponse(BaseModel):
@@ -61,6 +78,7 @@ class BusinessSummary(ORMModel):
     custom_industry: str | None
     bridge_method: str | None
     whatsapp_number: str | None
+    onboarding_completed: bool
 
 
 class MeResponse(BaseModel):

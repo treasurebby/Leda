@@ -11,15 +11,16 @@ import {
 } from "./model";
 import { downloadTemplate } from "./imports";
 
-export function IdentityStep({ identity, onChange, errors, onLegal }: {
+export function IdentityStep({ identity, onChange, errors, onLegal, locked = false }: {
   identity: Identity;
   onChange: (key: keyof Identity, value: string) => void;
   errors: FieldErrors;
   onLegal: (kind: "terms" | "privacy") => void;
+  locked?: boolean;
 }) {
   return (
     <>
-      <div className="setup-fields">
+      <fieldset className="setup-fields" disabled={locked}>
         <Field id="identity-fullName" label="Full name" error={errors.fullName}>
           <TextInput id="identity-fullName" name="fullName" autoComplete="name" placeholder="e.g. Ada Okoro" value={identity.fullName} onChange={event => onChange("fullName", event.target.value)} invalid={!!errors.fullName} maxLength={100} required />
         </Field>
@@ -29,9 +30,9 @@ export function IdentityStep({ identity, onChange, errors, onLegal }: {
         <Field id="identity-email" label="Email address" error={errors.email}>
           <TextInput id="identity-email" name="email" type="email" autoComplete="email" placeholder="you@yourbusiness.com" value={identity.email} onChange={event => onChange("email", event.target.value)} invalid={!!errors.email} maxLength={254} required />
         </Field>
-        <Field id="identity-password" label="Password" error={errors.password} hint="At least 8 characters, with a letter and a number.">
+        {!locked && <Field id="identity-password" label="Password" error={errors.password} hint="At least 8 characters, with a letter and a number.">
           <PasswordInput id="identity-password" name="password" autoComplete="new-password" placeholder="Create a secure password" value={identity.password} onChange={event => onChange("password", event.target.value)} invalid={!!errors.password} required />
-        </Field>
+        </Field>}
         <Field id="identity-businessName" label="Business name" error={errors.businessName}>
           <TextInput id="identity-businessName" name="businessName" autoComplete="organization" placeholder="e.g. Okoro Wholesale Ltd" value={identity.businessName} onChange={event => onChange("businessName", event.target.value)} invalid={!!errors.businessName} maxLength={160} required />
         </Field>
@@ -43,7 +44,7 @@ export function IdentityStep({ identity, onChange, errors, onLegal }: {
             <TextInput id="identity-customIndustry" placeholder="e.g. Musical instruments and studio equipment" value={identity.customIndustry} onChange={event => onChange("customIndustry", event.target.value)} invalid={!!errors.customIndustry} maxLength={160} required />
           </Field>
         )}
-      </div>
+      </fieldset>
       <p className="setup-consent">By continuing, you agree to our <button type="button" onClick={() => onLegal("terms")}>Terms of Service</button> and <button type="button" onClick={() => onLegal("privacy")}>Privacy Policy</button>.</p>
     </>
   );

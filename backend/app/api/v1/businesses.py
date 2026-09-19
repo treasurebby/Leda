@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import DB, CurrentTenant, Tenant, require
 from app.schemas.auth import BusinessSummary
@@ -11,6 +11,15 @@ router = APIRouter(prefix="/business", tags=["business"])
 
 @router.get("", response_model=BusinessSummary)
 async def get_business(tenant: CurrentTenant) -> BusinessSummary:
+    return BusinessSummary.model_validate(tenant.business)
+
+
+@router.post("/complete-setup", response_model=BusinessSummary)
+async def complete_setup(db: DB, tenant: Annotated[Tenant, Depends(require("business:write"))]) -> BusinessSummary:
+    if tenant.business.bridge_method is None:
+        raise HTTPException(400, "Choose your WhatsApp connection before completing setup")
+    tenant.business.onboarding_completed = True
+    await db.commit()
     return BusinessSummary.model_validate(tenant.business)
 
 

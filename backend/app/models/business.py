@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base, TimestampMixin, str_120, uuid_pk
@@ -24,5 +24,6 @@ class Business(TimestampMixin, Base):
     whatsapp_number: Mapped[str | None] = mapped_column(String(32), index=True)
     # Per-business counter for human-readable order numbers (LE-1041). Bumped inside a row lock.
     next_order_number: Mapped[int] = mapped_column(Integer, default=1001)
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     memberships: Mapped[list["Membership"]] = relationship(back_populates="business")  # noqa: F821

@@ -22,3 +22,7 @@ backend/media/
 .vscode/
 .idea/
 .DS_Store
+playwright-report/
+test-results/
+openapi.local.json
+pytest-cache-files-*/

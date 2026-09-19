@@ -13,7 +13,9 @@ import {
 import { SAMPLE_PRODUCTS, SAMPLE_RETAILERS, parseProducts, parseRetailers, readSpreadsheet } from "./imports";
 import { clearDraft, readDraft, safeSummary, saveDraft, type SetupData } from "./draft";
 import { ApiError } from "../api/client";
-import { hasToken, login, me, register } from "../api/auth";
+import { login, register } from "../api/auth";
+import { api } from "../api/client";
+import { useSession } from "../auth/Session";
 import { cancelInvite, createInvite, csvBlob, startImport, updateBridge, waitForImport } from "../api/onboarding";
 import "./onboarding.css";
 
@@ -32,7 +34,11 @@ function focusError() {
 }
 
 export default function Onboarding() {
-  const [draft] = useState(readDraft);
+  const { user: session, reload, signOut } = useSession();
+  const [draft] = useState(() => {
+    const saved = readDraft();
+    return session && saved?.identity.email.toLowerCase() !== session.user.email.toLowerCase() ? null : saved;
+  });
   const [identity, setIdentity] = useState<Identity>(() => ({ ...EMPTY_IDENTITY, ...draft?.identity, password: "" }));
   const [method, setMethod] = useState<BridgeMethod>(draft?.method ?? null);
   const [businessPhone, setBusinessPhone] = useState(draft?.businessPhone ?? "");
@@ -52,7 +58,7 @@ export default function Onboarding() {
   const [downloaded, setDownloaded] = useState(false);
   const [resuming, setResuming] = useState(!!draft);
   const [busy, setBusy] = useState(false);
-  const [registered, setRegistered] = useState(hasToken);
+  const [registered, setRegistered] = useState(!!session);
   const [formError, setFormError] = useState("");
   const resumeStep = useRef(draft?.step ?? 0);
   const controller = useRef<AbortController | null>(null);
@@ -61,25 +67,25 @@ export default function Onboarding() {
 
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
-    if (!hasToken()) return;
-    void me().then(session => {
-      if (!session) { setRegistered(false); return; }
+    if (session) {
       setRegistered(true);
       setIdentity(current => ({
-        ...current, fullName: current.fullName || session.user.full_name, email: current.email || session.user.email,
-        phone: current.phone || session.user.phone || "", businessName: current.businessName || session.business.name,
-        industry: current.industry || session.business.industry,
+        ...current, fullName: session.user.full_name, email: session.user.email,
+        phone: session.user.phone || "", businessName: session.business.name,
+        industry: session.business.custom_industry ? "Other" : session.business.industry,
+        customIndustry: session.business.custom_industry ?? "", password: "",
       }));
       if (session.business.bridge_method && !method) setMethod(session.business.bridge_method as BridgeMethod);
       if (session.business.whatsapp_number && !businessPhone) setBusinessPhone(session.business.whatsapp_number);
-    });
+      setResuming(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session]);
 
   const data: SetupData = { identity, method, businessPhone, products, retailers, staff };
 
   function navigate(next: number) {
-    if (job) return;
+    if (job || busy) return;
     setDirection(next >= step ? 1 : -1);
     setStep(next);
     setFinished(false);
@@ -178,7 +184,9 @@ export default function Onboarding() {
   }
 
   async function completeSetup(skipPendingMember = false) {
+    if (busy) return;
     const identityErrors = validateIdentity(identity);
+    if (registered) delete identityErrors.password;
     if (Object.keys(identityErrors).length) {
       navigate(0);
       setErrors(identityErrors);
@@ -194,6 +202,14 @@ export default function Onboarding() {
     const pending = !!(staffInput.email.trim() || staffInput.phone.trim());
     if (!skipPendingMember && pending && !(await addMember())) return;
     if (skipPendingMember) setStaffInput({ ...EMPTY_STAFF });
+    setBusy(true);
+    try {
+      await api.post("/business/complete-setup");
+      await reload();
+    } catch (error) {
+      setFormError(error instanceof ApiError ? error.message : "We couldn't finish your setup. Please try again.");
+      return;
+    } finally { setBusy(false); }
     setReached(4);
     setFinished(true);
     setErrors({});
@@ -207,11 +223,14 @@ export default function Onboarding() {
     setFormError("");
     if (step === 0) {
       const validation = validateIdentity(identity);
+      if (registered) delete validation.password;
       setErrors(validation);
       if (Object.keys(validation).length) { focusError(); return; }
       setBusy(true);
       try {
-        if (registered || resuming) {
+        if (registered) {
+          // This identity is already authenticated; don't create another account or retain its password.
+        } else if (resuming && draft?.accountCreated) {
           // Returning: the account already exists, so the password re-entry is a real sign-in.
           await login(identity.email.trim().toLowerCase(), identity.password);
           setRegistered(true);
@@ -224,13 +243,17 @@ export default function Onboarding() {
           });
           setRegistered(true);
         }
+        await reload();
+        setIdentity(current => ({ ...current, password: "" }));
       } catch (error) {
         if (error instanceof ApiError) {
           if (error.status === 409) {
-            setErrors({ email: "An account with this email already exists. Re-enter your password to sign in." });
-            setResuming(true);
+            setErrors({ email: "An account with this email already exists. Use Sign in below to continue." });
           } else if (error.status === 401) setErrors({ password: "That password doesn't match this account." });
-          else if (error.status === 422) setErrors(error.fieldErrors());
+          else if (error.status === 422) {
+            const keys: Record<string, string> = { full_name: "fullName", business_name: "businessName", custom_industry: "customIndustry" };
+            setErrors(Object.fromEntries(Object.entries(error.fieldErrors()).map(([key, value]) => [keys[key] ?? key, value])));
+          }
           else setFormError(error.message);
         } else setFormError("We couldn't reach Leda. Check your connection and try again.");
         focusError();
@@ -268,7 +291,7 @@ export default function Onboarding() {
 
   function saveAndExit() {
     try {
-      saveDraft(data, step);
+      saveDraft(data, step, registered);
       setDialog(null);
       window.location.hash = "/welcome";
     } catch {
@@ -276,7 +299,8 @@ export default function Onboarding() {
     }
   }
 
-  function restart() {
+  async function restart() {
+    try { await signOut(); } catch { /* The local session is cleared even if the connection is lost. */ }
     clearDraft();
     setIdentity({ ...EMPTY_IDENTITY });
     setMethod(null);
@@ -286,6 +310,7 @@ export default function Onboarding() {
     setStaff([]);
     setStaffInput({ ...EMPTY_STAFF });
     setResuming(false);
+    setRegistered(false);
     resumeStep.current = 0;
     setReached(0);
     setDownloaded(false);
@@ -362,13 +387,14 @@ export default function Onboarding() {
                   <p>{resuming && step === 0 ? "Welcome back. Your draft is here. Re-enter your password to keep going." : HEADINGS[step][1]}</p>
                 </div>
 
-                {step === 0 && <IdentityStep identity={identity} onChange={changeIdentity} errors={errors} onLegal={setDialog} />}
+                {step === 0 && <IdentityStep identity={identity} onChange={changeIdentity} errors={errors} onLegal={setDialog} locked={registered} />}
                 {step === 1 && <BridgeStep method={method} onMethod={chooseMethod} phone={businessPhone} onPhone={value => { setBusinessPhone(value); setErrors({}); }} errors={errors} />}
                 {step === 2 && <ProductsStep products={products} {...importProps("products")} />}
                 {step === 3 && <RetailersStep retailers={retailers} {...importProps("retailers")} />}
                 {step === 4 && <TeamStep staff={staff} input={staffInput} onChange={changeStaff} onAdd={() => { void addMember(); }} onRemove={removeMember} onRole={(id, role) => setStaff(current => current.map(member => member.id === id ? { ...member, role } : member))} errors={errors} onSkip={() => { void completeSetup(true); }} />}
 
                 {formError && <p className="setup-form-error" role="alert">{formError}</p>}
+                {step === 0 && <p className="setup-reassurance">{registered ? "You're signed in. Continue setting up your workspace." : <a href="#/signin?next=%23%2Fonboarding">Already have an account? Sign in</a>}</p>}
 
                 <div className="setup-form-actions">
                   <button type="button" className="setup-back-button" disabled={!!job || busy} onClick={() => step ? navigate(step - 1) : (window.location.hash = "/welcome")}><ArrowLeft size={16} />{step ? "Back" : "Back to Leda"}</button>

@@ -56,7 +56,7 @@ export default function Nav() {
 
         <div className="flex items-center gap-3">
           <a
-            href="#/login"
+            href="#/signin"
             className={cn(
               "hidden text-[14px] font-medium transition-colors sm:inline-flex",
               light ? "text-cream/75 hover:text-cream" : "text-olive/60 hover:text-forest"
@@ -110,7 +110,7 @@ export default function Nav() {
                 </a>
               ))}
               <a
-                href="#/login"
+                href="#/signin"
                 onClick={() => setOpen(false)}
                 className="rounded-xl px-3 py-3 text-[15px] font-semibold text-olive hover:bg-forest/5"
               >

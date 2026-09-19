@@ -19,7 +19,7 @@ PASSWORD_RE_DIGIT = re.compile(r"\d")
 
 def valid_password(value: str) -> bool:
     """Same rule as the onboarding UI: at least 8 chars with a letter and a number."""
-    return len(value) >= 8 and bool(PASSWORD_RE_LETTER.search(value)) and bool(PASSWORD_RE_DIGIT.search(value))
+    return 8 <= len(value) <= 128 and bool(PASSWORD_RE_LETTER.search(value)) and bool(PASSWORD_RE_DIGIT.search(value))
 
 
 def hash_password(raw: str) -> str:
@@ -43,7 +43,7 @@ def normalise_phone(value: str) -> str | None:
 
 
 # ---------------------------------------------------------------- JWT access tokens
-def create_access_token(user_id: uuid.UUID, business_id: uuid.UUID | None) -> str:
+def create_access_token(user_id: uuid.UUID, business_id: uuid.UUID | None, auth_version: int = 0) -> str:
     now = utcnow()
     payload: dict[str, Any] = {
         "sub": str(user_id),
@@ -51,6 +51,7 @@ def create_access_token(user_id: uuid.UUID, business_id: uuid.UUID | None) -> st
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_minutes),
         "typ": "access",
+        "ver": auth_version,
     }
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 

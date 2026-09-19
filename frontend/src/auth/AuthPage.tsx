@@ -1,28 +1,38 @@
 import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import "../onboarding/onboarding.css";
+import { Check, LockKeyhole } from "lucide-react";
+import "./auth.css";
 
-/** Shared chrome for the sign-in and invitation pages, styled like the onboarding card. */
-export default function AuthPage({ title, intro, children }: { title: string; intro: string; children: ReactNode }) {
-  const reduceMotion = useReducedMotion();
-  return (
-    <div className="onboarding-page">
-      <header className="setup-topbar">
-        <a href="#/welcome" className="onboarding-brand" aria-label="Leda home">
-          <svg viewBox="0 0 40 40" width="39" height="39" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#065F46" /><path d="M9 25c8 0 9-12 15-12 4 0 6 3 8 5" fill="none" stroke="#FDFBF7" strokeWidth="3.5" strokeLinecap="round" /><circle cx="30" cy="23" r="2.7" fill="#D97706" /></svg>
-          <span>Leda</span>
-        </a>
-      </header>
-      <main className="setup-main">
-        <motion.div className="setup-intro" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.5 }}>
-          <h1>{title}</h1>
-          <p>{intro}</p>
-        </motion.div>
-        <motion.section className="setup-card auth-card" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.6, delay: reduceMotion ? 0 : 0.1, ease: [0.16, 1, 0.3, 1] }}>
-          {children}
-        </motion.section>
-      </main>
-      <footer className="setup-page-footer"><p>&copy; {new Date().getFullYear()} Leda. Built for the way you trade.</p></footer>
-    </div>
-  );
+function Brand() {
+  return <a href="#/welcome" className="auth-brand" aria-label="Leda home">
+    <span className="auth-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="21" height="21" fill="none"><path d="M5 21c6.5 0 8.5-9.5 14-9.5 3.6 0 5.4 2.4 7.6 4.5" stroke="#065F46" strokeWidth="3" strokeLinecap="round" /><circle cx="25" cy="19" r="2.6" fill="#D97706" /></svg></span><span>Leda</span>
+  </a>;
+}
+
+export default function AuthPage({ title, intro, kicker = "Welcome back", children }: {
+  title: string; intro: string; kicker?: string; children: ReactNode;
+}) {
+  return <main className="auth-page">
+    <section className="auth-aside" aria-label="About Leda">
+      <Brand />
+      <div className="auth-aside-copy">
+        <p className="auth-kicker">Wholesale, in order</p>
+        <h1>Every WhatsApp order, clear enough to trust.</h1>
+        <p>Bring your customers, stock and cash flow into one business view, without asking the market to change how it speaks.</p>
+      </div>
+      <div className="auth-aside-points">
+        <span><Check size={15} />Structured orders from real conversations</span>
+        <span><Check size={15} />A ledger that reconciles as you trade</span>
+        <span><Check size={15} />Built for distributors across Nigeria</span>
+      </div>
+      <p className="auth-aside-foot">Leda Technologies Ltd · Lagos, Nigeria</p>
+    </section>
+    <section className="auth-form-side" aria-label={title}>
+      <div className="auth-form-wrap">
+        <div className="auth-mobile-brand"><Brand /></div>
+        <div className="auth-title"><p>{kicker}</p><h2>{title}</h2><span>{intro}</span></div>
+        {children}
+        <p className="auth-security"><LockKeyhole size={13} />Your password stays private. Your business stays yours.</p>
+      </div>
+    </section>
+  </main>;
 }

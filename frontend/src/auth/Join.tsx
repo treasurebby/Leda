@@ -1,53 +1,43 @@
 import { useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import AuthPage from "./AuthPage";
-import { Field, PasswordInput, TextInput } from "../onboarding/Fields";
+import AuthInput, { focusAuthError } from "./AuthInput";
 import { validPassword } from "../onboarding/model";
 import { acceptInvite } from "../api/auth";
 import { ApiError } from "../api/client";
+import { afterSignIn, useSession } from "./Session";
 
-/** Invitation landing page: #/join/<token>. The invitee picks their own password here. */
 export default function Join({ token }: { token: string }) {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-
+  const { reload } = useSession();
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const next: Record<string, string> = {};
-    if (fullName.trim().length < 2) next.fullName = "Please enter your full name.";
-    if (!validPassword(password)) next.password = "Use at least 8 characters, with a letter and a number.";
+    if (fullName.trim().length < 2) next.fullName = "Enter your full name.";
+    if (!validPassword(password)) next.password = "Use 8–128 characters, with a letter and a number.";
     setErrors(next);
-    if (Object.keys(next).length) return;
+    if (Object.keys(next).length) { focusAuthError(); return; }
     setBusy(true);
     try {
       await acceptInvite(token, fullName.trim(), password);
-      window.location.hash = "/dashboard";
+      window.location.hash = afterSignIn(await reload());
     } catch (error) {
-      setErrors({ form: error instanceof ApiError ? error.message : "We couldn't reach Leda. Check your connection and try again." });
-    } finally {
-      setBusy(false);
-    }
+      setErrors({ form: error instanceof ApiError ? error.message : "We couldn't reach Leda. Please try again." });
+    } finally { setBusy(false); }
   }
-
-  return (
-    <AuthPage title="You've been invited." intro="Set up your login to join the team on Leda.">
-      <form className="setup-form" onSubmit={submit} noValidate>
-        <div className="setup-fields">
-          <Field id="join-name" label="Your full name" error={errors.fullName}>
-            <TextInput id="join-name" autoComplete="name" value={fullName} onChange={e => { setFullName(e.target.value); setErrors({}); }} invalid={!!errors.fullName} required />
-          </Field>
-          <Field id="join-password" label="Choose a password" error={errors.password} hint="At least 8 characters, with a letter and a number.">
-            <PasswordInput id="join-password" autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setErrors({}); }} invalid={!!errors.password} required />
-          </Field>
-        </div>
-        {errors.form && <p className="setup-form-error" role="alert">{errors.form}</p>}
-        <div className="setup-form-actions">
-          <a className="setup-back-button" href="#/login">Already have a login? Sign in</a>
-          <button type="submit" className="setup-button setup-button-primary continue-button" disabled={busy} aria-busy={busy}>{busy ? "Joining…" : "Join the team"}<ArrowRight size={17} /></button>
-        </div>
-      </form>
-    </AuthPage>
-  );
+  return <AuthPage kicker="Your team is waiting" title="Join your workspace." intro="New to Leda? Choose a password. If you already have an account, use its current password.">
+    <form className="auth-form" onSubmit={submit} noValidate aria-busy={busy}>
+      <AuthInput id="join-name" label="Your full name" autoComplete="name" maxLength={120} required
+        value={fullName} onChange={e => setFullName(e.target.value)} error={errors.fullName} />
+      <AuthInput id="join-password" label="Password" type="password" autoComplete="new-password" maxLength={128} required
+        value={password} onChange={e => setPassword(e.target.value)} error={errors.password} />
+      {errors.form && <p className="auth-error" role="alert">{errors.form}</p>}
+      <button type="submit" className="auth-submit" disabled={busy}>{busy ? "Joining…" : "Join the team"}<ArrowRight size={17} /></button>
+    </form>
+    <p className="auth-signup"><a href="#/signin">Back to sign in</a> · <a href="#/forgot-password">Forgot password?</a></p>
+  </AuthPage>;
 }

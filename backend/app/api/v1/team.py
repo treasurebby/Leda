@@ -65,7 +65,7 @@ async def accept_invite(token: str, data: InviteAccept, db: DB, response: Respon
         user, business = await team_service.accept_invite(db, token, data)
     except team_service.TeamError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    _set_refresh_cookie(response, await auth_service.issue_refresh_token(db, user))
+    _set_refresh_cookie(response, await auth_service.issue_refresh_token(db, user, business_id=business.id))
     return _token_response(user, business.id)
 
 

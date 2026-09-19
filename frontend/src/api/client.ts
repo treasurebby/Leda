@@ -1,63 +1,95 @@
-/**
- * Thin fetch wrapper for the Leda API.
- *
- * - Access tokens are short-lived and kept in memory + sessionStorage.
- * - The refresh token lives in an httpOnly cookie set by the server; on a 401 we try one refresh and retry.
- * - Errors surface as ApiError with the server's `detail` (string or FastAPI validation list).
- */
 import type { components, paths } from "./types.gen";
 
 export type Schemas = components["schemas"];
 export type Paths = paths;
-
 export const API_BASE = "/api/v1";
+export const SESSION_EXPIRED = "leda:session-expired";
 const TOKEN_KEY = "leda.access";
-
+const SIGNED_OUT_KEY = "leda.signed-out";
 type ValidationItem = { loc: (string | number)[]; msg: string };
 
 export class ApiError extends Error {
-  status: number;
-  detail: string | ValidationItem[];
-  constructor(status: number, detail: string | ValidationItem[]) {
+  constructor(public status: number, public detail: string | ValidationItem[]) {
     super(typeof detail === "string" ? detail : detail.map(d => d.msg).join(" "));
-    this.status = status;
-    this.detail = detail;
   }
-  /** Map FastAPI validation errors to { fieldName: message }. */
   fieldErrors(): Record<string, string> {
-    if (typeof this.detail === "string") return {};
-    const out: Record<string, string> = {};
-    for (const item of this.detail) {
-      const key = String(item.loc[item.loc.length - 1]);
-      out[key] = item.msg.replace(/^Value error, /, "");
-    }
-    return out;
+    return typeof this.detail === "string" ? {} : Object.fromEntries(
+      this.detail.map(item => [String(item.loc[item.loc.length - 1]), item.msg.replace(/^Value error, /, "")]),
+    );
   }
 }
 
 let accessToken: string | null = null;
-try { accessToken = sessionStorage.getItem(TOKEN_KEY); } catch { /* storage may be disabled */ }
+let generation = 0;
+let refreshPending: Promise<boolean> | null = null;
+let signedOut = false;
+try {
+  signedOut = localStorage.getItem(SIGNED_OUT_KEY) === "true";
+  accessToken = signedOut ? null : sessionStorage.getItem(TOKEN_KEY);
+  localStorage.removeItem("leda.preview.session");
+  sessionStorage.removeItem("leda.preview.session");
+} catch { /* Authentication also works when storage is disabled. */ }
 
-export function setToken(token: string | null) {
+function storeToken(token: string | null) {
   accessToken = token;
   try {
     if (token) sessionStorage.setItem(TOKEN_KEY, token);
     else sessionStorage.removeItem(TOKEN_KEY);
-  } catch { /* ignore */ }
+  } catch { /* Keep the access token in memory. */ }
 }
 
-export function hasToken() {
-  return !!accessToken;
+export function setToken(token: string | null) {
+  generation += 1;
+  storeToken(token);
+  if (token) {
+    signedOut = false;
+    try { localStorage.removeItem(SIGNED_OUT_KEY); } catch { /* Optional storage. */ }
+  }
 }
 
+export function endSession() {
+  setToken(null);
+  signedOut = true;
+  try { localStorage.setItem(SIGNED_OUT_KEY, "true"); } catch { /* Optional storage. */ }
+  window.dispatchEvent(new Event(SESSION_EXPIRED));
+}
+
+window.addEventListener("storage", event => {
+  if (event.key === SIGNED_OUT_KEY && event.newValue === "true") endSession();
+});
+
+export const hasToken = () => !!accessToken;
 type Options = { method?: string; body?: unknown; form?: FormData; retry?: boolean; auth?: boolean };
 
+async function readResponse(resp: Response): Promise<unknown> {
+  if (resp.status === 204) return undefined;
+  const text = await resp.text();
+  let data;
+  try { data = text ? JSON.parse(text) : undefined; } catch {
+    throw new ApiError(resp.status || 502, "Leda's API is unavailable. Please try again shortly.");
+  }
+  if (!resp.ok) {
+    const detail = data?.detail;
+    throw new ApiError(resp.status, typeof detail === "string" || Array.isArray(detail)
+      ? detail : "Leda couldn't complete this request. Please try again.");
+  }
+  return data;
+}
+
 async function refresh(): Promise<boolean> {
-  const resp = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "include" });
-  if (!resp.ok) { setToken(null); return false; }
-  const data = (await resp.json()) as Schemas["TokenResponse"];
-  setToken(data.access_token);
-  return true;
+  if (signedOut) return false;
+  if (refreshPending) return refreshPending;
+  const started = generation;
+  refreshPending = (async () => {
+    const resp = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "include" });
+    if (started !== generation) return false;
+    if (resp.status === 401) { storeToken(null); return false; }
+    const data = await readResponse(resp) as Schemas["TokenResponse"];
+    if (started !== generation) return false;
+    storeToken(data.access_token);
+    return true;
+  })().finally(() => { refreshPending = null; });
+  return refreshPending;
 }
 
 export async function request<T>(path: string, options: Options = {}): Promise<T> {
@@ -65,18 +97,19 @@ export async function request<T>(path: string, options: Options = {}): Promise<T
   const headers: Record<string, string> = {};
   if (auth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  const started = generation;
   const resp = await fetch(`${API_BASE}${path}`, {
     method, headers, credentials: "include",
     body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
   });
-  if (resp.status === 401 && auth && retry && (await refresh())) {
-    return request<T>(path, { ...options, retry: false });
+  if (resp.status === 401 && auth) {
+    if (retry && started === generation && await refresh()) return request<T>(path, { ...options, retry: false });
+    if (started === generation) {
+      storeToken(null);
+      window.dispatchEvent(new Event(SESSION_EXPIRED));
+    }
   }
-  if (resp.status === 204) return undefined as T;
-  const text = await resp.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!resp.ok) throw new ApiError(resp.status, data?.detail ?? resp.statusText);
-  return data as T;
+  return await readResponse(resp) as T;
 }
 
 export const api = {
