@@ -9,6 +9,8 @@ class BusinessUpdate(BaseModel):
     industry: str | None = Field(default=None, max_length=120)
     custom_industry: str | None = Field(default=None, max_length=120)
     auto_reply: bool | None = None
+    # The WhatsApp number retailers message (E.164). Inbound messages to this number route to this business.
+    whatsapp_number: str | None = Field(default=None, pattern=r"^\+[1-9]\d{6,14}$")
 
 
 class BridgeUpdate(BaseModel):

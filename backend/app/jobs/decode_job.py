@@ -36,7 +36,7 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
             return
 
         if business_id is None:
-            business_id = await _route(db, message.from_number)
+            business_id = await _route(db, message.from_number, message.to_number)
         if business_id is None:
             log_row.error = "No business matched this sender"
             await db.commit()
@@ -114,11 +114,16 @@ async def _record_error(db, log_id: uuid.UUID, exc: Exception) -> None:
         await db.commit()
 
 
-async def _route(db, from_number: str) -> uuid.UUID | None:
-    """Which business does this sender belong to? Known retailer phone first; single-tenant fallback second."""
+async def _route(db, from_number: str, to_number: str | None) -> uuid.UUID | None:
+    """Which business is this for? A known retailer phone; else the business whose WhatsApp number received it;
+    else, when there is exactly one business, that one."""
     retailer = await db.scalar(select(Retailer).where(Retailer.phone == from_number))
     if retailer:
         return retailer.business_id
+    if to_number:
+        biz = await db.scalar(select(Business.id).where(Business.whatsapp_number == to_number))
+        if biz:
+            return biz
     ids = (await db.execute(select(Business.id).limit(2))).scalars().all()
     return ids[0] if len(ids) == 1 else None
 
