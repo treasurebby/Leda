@@ -31,7 +31,7 @@ export function safeSummary(data: SetupData) {
     businessPhone: data.businessPhone,
     products: data.products,
     retailers: data.retailers,
-    staff: data.staff.map(({ id, email, phone, role }) => ({ id, email, phone, role })),
+    staff: data.staff.map(({ id, email, phone, role, inviteId }) => ({ id, email, phone, role, inviteId })),
   };
 }
 

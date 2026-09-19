@@ -227,9 +227,6 @@ export function TeamStep({ staff, input, onChange, onAdd, onRemove, onRole, erro
         <Field id="staffPhone" label="Phone number" error={errors.staffPhone}>
           <PhoneInput id="staffPhone" value={input.phone} onChange={event => onChange("phone", event.target.value)} invalid={!!errors.staffPhone} />
         </Field>
-        <Field id="staffPassword" label="Temporary password" error={errors.staffPassword} hint="At least 8 characters, with a letter and a number.">
-          <PasswordInput id="staffPassword" autoComplete="new-password" placeholder="Create a temporary password" value={input.password} onChange={event => onChange("password", event.target.value)} invalid={!!errors.staffPassword} />
-        </Field>
         <Field id="staffRole" label="Assign a role" error={errors.staffRole}>
           <div className="native-select-wrap"><select id="staffRole" className="setup-input" value={input.role} onChange={event => onChange("role", event.target.value)} aria-describedby="role-description">{Object.keys(ROLES).map(role => <option key={role}>{role}</option>)}</select><ChevronDown size={16} aria-hidden="true" /></div>
         </Field>
@@ -250,7 +247,7 @@ export function TeamStep({ staff, input, onChange, onAdd, onRemove, onRole, erro
           </AnimatePresence>
         </div>
       )}
-      <p className="step-footnote">Team access is prepared here; live logins and invitations are not sent in this preview. {!staff.length && <button type="button" onClick={onSkip}>I'll add my team later.</button>}</p>
+      <p className="step-footnote">Each person gets an email invitation and sets their own password. {!staff.length && <button type="button" onClick={onSkip}>I'll add my team later.</button>}</p>
     </>
   );
 }

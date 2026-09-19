@@ -17,8 +17,8 @@ export type Retailer = {
   phone: string;
   accountReference: string;
 };
-export type StaffMember = { id: string; email: string; phone: string; role: string };
-export type StaffInput = Omit<StaffMember, "id"> & { password: string };
+export type StaffMember = { id: string; email: string; phone: string; role: string; inviteId?: string };
+export type StaffInput = Omit<StaffMember, "id" | "inviteId">;
 export type ImportResult<T> = { fileName: string; rows: T[]; sample: boolean };
 export type ImportJob = { kind: "products" | "retailers"; phase: number };
 
@@ -28,7 +28,7 @@ export const EMPTY_IDENTITY: Identity = {
 };
 
 export const EMPTY_STAFF: StaffInput = {
-  email: "", phone: "", password: "", role: "Sales representative",
+  email: "", phone: "", role: "Sales representative",
 };
 
 export const STEPS = [
@@ -97,7 +97,6 @@ export function validateStaff(input: StaffInput, members: StaffMember[], ownerEm
   else if (email === ownerEmail.trim().toLowerCase()) errors.staffEmail = "You're already the workspace owner. Add someone else.";
   else if (members.some(member => member.email === email)) errors.staffEmail = "This person is already in your team list.";
   if (!normalisePhone(input.phone)) errors.staffPhone = "Enter a valid Nigerian mobile number.";
-  if (!validPassword(input.password)) errors.staffPassword = "Use at least 8 characters, with a letter and a number.";
   if (!Object.prototype.hasOwnProperty.call(ROLES, input.role)) errors.staffRole = "Please choose a role.";
   return errors;
 }
