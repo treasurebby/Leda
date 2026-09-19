@@ -69,7 +69,9 @@ Dev-only (`APP_ENV=dev`): `POST /dev/simulate/whatsapp` (text, audio or image up
 | `PAYSTACK_SECRET_KEY` | DVA creation + webhook signature; empty = fake provider |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` | Cloud API; empty = fake |
 | `OPENAI_API_KEY`, `WHISPER_MODEL` | voice transcription; empty = fake transcriber |
-| `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` | decoding; empty = deterministic fake decoder |
+| `DECODER` | `auto` (Anthropic if its key is set, else OpenAI, else fake), or `anthropic` / `openai` / `fake` |
+| `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` | Claude decoder (`claude-opus-5`) |
+| `OPENAI_DECODER_MODEL` | OpenAI decoder model when `DECODER=openai` (default `gpt-5.5`) |
 
 ## Provider setup
 
@@ -98,4 +100,5 @@ cd backend
 uv run pytest                                   # 28 tests on in-memory SQLite (fast)
 TEST_DATABASE_URL=postgresql+asyncpg://leda:leda@localhost/leda_test uv run pytest   # same suite on Postgres
 ANTHROPIC_API_KEY=... uv run pytest -m live     # opt-in: real Claude reads the bundled order slip
+OPENAI_API_KEY=... uv run pytest -m live        # opt-in: real OpenAI decoder flags "the yellow one"
 ```

@@ -241,3 +241,40 @@ async def test_live_claude_reads_the_order_slip():
     )
     assert result.lines and all(ln.sku in {c["sku"] for c in catalog} for ln in result.lines)
     assert any(f.kind == "slang" for f in result.flags), result
+
+
+@pytest.mark.live
+@pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="needs OPENAI_API_KEY")
+async def test_live_openai_decoder_flags_the_slang():
+    from app.integrations.claude import DecodeInput, OpenAIDecoder
+
+    decoder = OpenAIDecoder(os.environ["OPENAI_API_KEY"], os.environ.get("OPENAI_DECODER_MODEL", "gpt-5.5"))
+    catalog = [
+        {"sku": "RSR-50", "name": "Royal Stallion Parboiled Rice", "unit": "Bag 50kg", "price": "78500", "aliases": []},
+        {
+            "sku": "KVO-25R",
+            "name": "Kings Vegetable Oil",
+            "unit": "Keg 25L",
+            "price": "96500",
+            "aliases": ["the yellow one"],
+        },
+        {
+            "sku": "FSL-25",
+            "name": "Fortune Soya Oil",
+            "unit": "Keg 25L",
+            "price": "91000",
+            "aliases": ["the yellow one"],
+        },
+    ]
+    result = await decoder.decode(
+        DecodeInput(
+            catalog=catalog,
+            retailer_name="Okafor Provisions",
+            recent_skus=["RSR-50"],
+            transcript=(
+                "Send me like fifty bags of Royal Stallion, make e remain small. Add fifteen kegs of the yellow one."
+            ),
+        )
+    )
+    assert result.lines and all(ln.sku in {c["sku"] for c in catalog} for ln in result.lines)
+    assert any(f.kind == "slang" for f in result.flags), result

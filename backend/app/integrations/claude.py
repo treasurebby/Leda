@@ -1,5 +1,8 @@
-"""The Sabi engine: Claude turns a transcript and/or photo plus the business's catalog into a structured order
-with per-line confidence and explicit flags for anything ambiguous."""
+"""The Sabi engine: an LLM turns a transcript and/or photo plus the business's catalog into a structured order
+with per-line confidence and explicit flags for anything ambiguous.
+
+Two interchangeable implementations share the same prompt and DecodedOrder schema: ClaudeDecoder (Anthropic)
+and OpenAIDecoder. Pick with the DECODER setting; "auto" uses whichever key is configured."""
 
 import base64
 import json
@@ -133,6 +136,56 @@ class ClaudeDecoder:
         if parsed is None:
             text = next((b.text for b in response.content if b.type == "text"), "{}")
             parsed = DecodedOrder.model_validate(json.loads(text))
+        return parsed
+
+
+def _user_text(data: DecodeInput) -> str:
+    parts = []
+    if data.transcript:
+        parts.append(f'Voice note transcript (Whisper, may contain errors):\n"""{data.transcript}"""')
+    if data.text:
+        parts.append(f'Text message:\n"""{data.text}"""')
+    if data.image:
+        parts.append("The image above was sent with the order.")
+    return "\n\n".join(parts) + "\n\nDecode this into order lines."
+
+
+def _context(data: DecodeInput) -> str:
+    context = f"Catalog:\n{_catalog_block(data.catalog)}"
+    if data.retailer_name:
+        context += f"\n\nSender is a known retailer: {data.retailer_name}."
+    if data.recent_skus:
+        context += f"\nThey usually order: {', '.join(data.recent_skus)}."
+    return context
+
+
+class OpenAIDecoder:
+    """Same job as ClaudeDecoder via the OpenAI Responses API with a Pydantic-typed structured output."""
+
+    def __init__(self, api_key: str, model: str):
+        from openai import AsyncOpenAI
+
+        self.client = AsyncOpenAI(api_key=api_key)
+        self.model = model
+
+    async def decode(self, data: DecodeInput) -> DecodedOrder:
+        content: list[dict] = []
+        if data.image:
+            b, mime = data.image
+            content.append(
+                {"type": "input_image", "image_url": f"data:{mime};base64,{base64.standard_b64encode(b).decode()}"}
+            )
+        content.append({"type": "input_text", "text": _user_text(data)})
+        response = await self.client.responses.parse(
+            model=self.model,
+            instructions=SYSTEM_PROMPT + "\n\n" + _context(data),
+            input=[{"role": "user", "content": content}],
+            text_format=DecodedOrder,
+            reasoning={"effort": "medium"},
+        )
+        parsed = response.output_parsed
+        if parsed is None:
+            raise RuntimeError(f"OpenAI decoder returned no parsable output (status={response.status})")
         return parsed
 
 

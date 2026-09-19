@@ -39,7 +39,10 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    # Which model family decodes orders: "auto" picks anthropic if its key is set, else openai, else the fake.
+    decoder: Literal["auto", "anthropic", "openai", "fake"] = "auto"
     claude_model: str = "claude-opus-5"
+    openai_decoder_model: str = "gpt-5.5"
     whisper_model: str = "whisper-1"
 
     import_max_bytes: int = 5 * 1024 * 1024
