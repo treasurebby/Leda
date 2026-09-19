@@ -41,7 +41,7 @@ async def summary(db: DB, tenant: CurrentTenant) -> DashboardSummary:
             select(func.count())
             .select_from(Flag)
             .join(Order, Order.id == Flag.order_id)
-            .where(Order.business_id == biz, Flag.status == FlagStatus.open)
+            .where(Order.business_id == biz, Flag.status != FlagStatus.resolved)
         )
         or 0
     )
