@@ -49,6 +49,7 @@ class DiskStorage:
 class S3Storage:
     def __init__(self, bucket: str):
         import boto3
+        from botocore.config import Config
 
         self.bucket = bucket
         self.client = boto3.client(
@@ -57,6 +58,8 @@ class S3Storage:
             region_name=settings.s3_region,
             aws_access_key_id=settings.aws_access_key_id or None,
             aws_secret_access_key=settings.aws_secret_access_key or None,
+            # Supabase Storage (and most non-AWS S3 endpoints) need the bucket in the path, not the hostname.
+            config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
         )
 
     async def put(self, key: str, content: bytes, mime: str) -> None:
