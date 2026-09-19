@@ -51,7 +51,8 @@ async def list_messages(
     out: list[MessageOut] = []
     for m, order, retailer in rows:
         payload = m.payload or {}
-        text = (payload.get("text") or {}).get("body") if isinstance(payload.get("text"), dict) else payload.get("text")
+        raw_text = payload.get("text")
+        text = raw_text.get("body") if isinstance(raw_text, dict) else raw_text
         direction = "out" if m.kind == "outbound" else "in"
         if direction == "out":
             outcome = "sent"
