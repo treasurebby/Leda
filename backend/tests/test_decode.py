@@ -374,7 +374,12 @@ async def test_routing_by_receiving_number_and_messages_view(client, owner_token
     r = await client.patch("/api/v1/business", json={"whatsapp_number": "+15551787628"}, headers=h)
     assert r.status_code == 200 and r.json()["whatsapp_number"] == "+15551787628"
     client.cookies.clear()
-    await register(client, email="other@x.ng", business_name="Other Ltd")  # now there are two businesses
+    other = await register(client, email="other@x.ng", business_name="Other Ltd")  # now there are two businesses
+    # the other workspace connects the same number, then the first takes it back: last to connect wins
+    await client.patch("/api/v1/business", json={"whatsapp_number": "+15551787628"}, headers=auth(other))
+    assert (await client.get("/api/v1/business", headers=h)).json()["whatsapp_number"] is None
+    await client.patch("/api/v1/business", json={"whatsapp_number": "+15551787628"}, headers=h)
+    assert (await client.get("/api/v1/business", headers=auth(other))).json()["whatsapp_number"] is None
 
     payload = {
         "entry": [

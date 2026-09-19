@@ -118,7 +118,7 @@ export default function Messages({ query }: { query: string }) {
           <span className="dash-avatar" aria-hidden="true"><Phone size={16} /></span>
           <div>
             <strong>{business?.whatsapp_number ? `Retailers message ${business.whatsapp_number}` : "No WhatsApp number connected yet"}</strong>
-            <span>{business?.whatsapp_number ? `Messages to this number route to ${business.name}. Auto-reply is ${business.auto_reply ? "on" : "off"}.` : "Enter the number Meta gave you (the test number, or your business line) so incoming messages reach this workspace."}</span>
+            <span>{business?.whatsapp_number ? `Messages to this number route to ${business.name}. Auto-reply is ${business.auto_reply ? "on" : "off"}.` : "Enter the number Meta gave you (the test number, or your business line) so incoming messages reach this workspace. A number routes to one workspace at a time; connecting it here moves it from any other."}</span>
           </div>
         </div>
         <form className="msg-connect-form" onSubmit={saveNumber}>
