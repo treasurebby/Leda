@@ -26,7 +26,7 @@ class InboundMessage:
     media_id: str | None = None
     mime: str | None = None
     sender_name: str | None = None  # WhatsApp profile name, from the payload's contacts[]
-    to_number: str | None = None  # the business number that received it (payload metadata.display_phone_number)
+    to_number: str | None = None  # The connected WhatsApp number that received the message.
     raw: dict[str, Any] = field(default_factory=dict)
 
 
