@@ -27,7 +27,23 @@ async def complete_setup(db: DB, tenant: Annotated[Tenant, Depends(require("busi
 async def update_business(
     data: BusinessUpdate, db: DB, tenant: Annotated[Tenant, Depends(require("business:write"))]
 ) -> BusinessSummary:
-    for field, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("whatsapp_number"):
+        # A WhatsApp number can route to one workspace only: connecting it here disconnects it elsewhere.
+        from sqlalchemy import select
+
+        from app.models import Business
+
+        others = (
+            await db.execute(
+                select(Business).where(
+                    Business.whatsapp_number == changes["whatsapp_number"], Business.id != tenant.business_id
+                )
+            )
+        ).scalars()
+        for other in others:
+            other.whatsapp_number = None
+    for field, value in changes.items():
         setattr(tenant.business, field, value.strip() if isinstance(value, str) else value)
     await db.commit()
     return BusinessSummary.model_validate(tenant.business)
