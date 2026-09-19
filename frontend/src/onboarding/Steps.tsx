@@ -10,6 +10,7 @@ import {
   type ImportResult, type Product, type Retailer, type StaffInput, type StaffMember,
 } from "./model";
 import { downloadTemplate } from "./imports";
+import PriceList from "./PriceList";
 
 export function IdentityStep({ identity, onChange, errors, onLegal, locked = false }: {
   identity: Identity;
@@ -167,9 +168,11 @@ type ImportStepProps = {
   onCancel: () => void;
 };
 
-export function ProductsStep({ products, job, error, onFile, onSample, onClear, onError, onSkip, onCancel }: ImportStepProps & { products: ImportResult<Product> | null }) {
+export function ProductsStep({ products, job, error, onFile, onSample, onClear, onError, onSkip, onCancel, onPriceList }: ImportStepProps & { products: ImportResult<Product> | null; onPriceList: (items: { name: string; unit: string | null; price: string | number | null; sku?: string | null; stock?: number }[], source: string) => void }) {
   return (
     <>
+      {!job && !products && <PriceList onApplied={onPriceList} onError={onError} />}
+      {!job && !products && <p className="price-list-divider">or upload a spreadsheet</p>}
       {job ? <ImportProgress job={job} onCancel={onCancel} /> : products ? (
         <div className="import-preview">
           <div className="import-preview-header">

@@ -389,7 +389,7 @@ export default function Onboarding() {
 
                 {step === 0 && <IdentityStep identity={identity} onChange={changeIdentity} errors={errors} onLegal={setDialog} locked={registered} />}
                 {step === 1 && <BridgeStep method={method} onMethod={chooseMethod} phone={businessPhone} onPhone={value => { setBusinessPhone(value); setErrors({}); }} errors={errors} />}
-                {step === 2 && <ProductsStep products={products} {...importProps("products")} />}
+                {step === 2 && <ProductsStep products={products} {...importProps("products")} onPriceList={(items, source) => { setProducts({ fileName: source, rows: items.map((it, i) => ({ name: it.name, sku: it.sku || `PL-${i + 1}`, price: Number(it.price ?? 0), stock: it.stock ?? 0 })), sample: false }); setImportError(""); }} />}
                 {step === 3 && <RetailersStep retailers={retailers} {...importProps("retailers")} />}
                 {step === 4 && <TeamStep staff={staff} input={staffInput} onChange={changeStaff} onAdd={() => { void addMember(); }} onRemove={removeMember} onRole={(id, role) => setStaff(current => current.map(member => member.id === id ? { ...member, role } : member))} errors={errors} onSkip={() => { void completeSetup(true); }} />}
 

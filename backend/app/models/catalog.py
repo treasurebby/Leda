@@ -84,3 +84,55 @@ class ImportJob(Base):
     errors: Mapped[list[str]] = mapped_column(JSONType, default=list)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+
+
+class CatalogDraftStatus(enum.StrEnum):
+    pending = "pending"
+    applied = "applied"
+    discarded = "discarded"
+
+
+class CatalogDraft(Base):
+    """Products Sabi extracted from a price list (message, photo, voice or pasted text), awaiting the owner's YES."""
+
+    __tablename__ = "catalog_drafts"
+
+    id: Mapped[uuid_pk]
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    source: Mapped[str] = mapped_column(String(32))  # whatsapp | web
+    items: Mapped[list[dict]] = mapped_column(
+        JSONType, default=list
+    )  # [{name, unit, price, aliases, confidence, note}]
+    status: Mapped[CatalogDraftStatus] = mapped_column(
+        Enum(CatalogDraftStatus, name="catalog_draft_status"), default=CatalogDraftStatus.pending
+    )
+    inserted: Mapped[int] = mapped_column(Integer, default=0)
+    updated: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    applied_at: Mapped[datetime | None] = mapped_column(TZDateTime)
+
+
+class ProductRequestStatus(enum.StrEnum):
+    open = "open"
+    added = "added"
+    dismissed = "dismissed"
+
+
+class ProductRequest(Base):
+    """Something a retailer asked for that is not in the catalog. The demand-side path into the catalog."""
+
+    __tablename__ = "product_requests"
+    __table_args__ = (UniqueConstraint("business_id", "query_key"),)
+
+    id: Mapped[uuid_pk]
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    query: Mapped[str] = mapped_column(String(160))  # as the retailer said it, e.g. "cucumber"
+    query_key: Mapped[str] = mapped_column(String(160))  # normalised for de-duplication
+    times_asked: Mapped[int] = mapped_column(Integer, default=1)
+    last_retailer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("retailers.id", ondelete="SET NULL"))
+    status: Mapped[ProductRequestStatus] = mapped_column(
+        Enum(ProductRequestStatus, name="product_request_status"), default=ProductRequestStatus.open
+    )
+    product_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"))
+    first_asked_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    last_asked_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)

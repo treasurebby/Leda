@@ -11,6 +11,7 @@ from app.integrations.storage import get_storage
 from app.integrations.whatsapp import InboundMessage, get_whatsapp
 from app.integrations.whisper import get_transcriber
 from app.models import Business, Retailer, WhatsAppMessage
+from app.services import catalog as catalog_svc
 from app.services.decode import Providers, Signal, answer_question, decode_signal
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,19 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
 
         providers = Providers(get_storage(), get_transcriber(), get_decoder(), get_whatsapp())
 
+        # The owner (or a team member) messaging Leda is managing the catalog, not placing an order.
+        log_id = log_row.id
+        business = await db.get(Business, business_id)
+        if business is not None and await catalog_svc.is_owner_number(db, business, message.from_number):
+            try:
+                await handle_owner_message(db, business, message, providers)
+                await db.commit()
+            except Exception as exc:
+                log.exception("owner message failed for %s", message.wa_message_id)
+                await db.rollback()
+                await _record_error(db, log_id, exc)
+            return
+
         # A bare number from a retailer with an open question is an answer, not a new order.
         if message.kind == "text" and message.text and message.text.strip().isdigit():
             retailer = await db.scalar(
@@ -62,10 +76,7 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
                 except Exception as exc:
                     log.exception("answer handling failed for %s", message.wa_message_id)
                     await db.rollback()
-                    log_row = await db.get(WhatsAppMessage, log_row.id)
-                    if log_row is not None:
-                        log_row.error = str(exc)[:255]
-                        await db.commit()
+                    await _record_error(db, log_id, exc)
                     return
 
         signal = Signal(
@@ -93,10 +104,14 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
         except Exception as exc:
             log.exception("decode failed for %s", message.wa_message_id)
             await db.rollback()
-            log_row = await db.get(WhatsAppMessage, log_row.id)
-            if log_row is not None:
-                log_row.error = str(exc)[:255]
-                await db.commit()
+            await _record_error(db, log_id, exc)
+
+
+async def _record_error(db, log_id: uuid.UUID, exc: Exception) -> None:
+    row = await db.get(WhatsAppMessage, log_id)
+    if row is not None:
+        row.error = str(exc)[:255]
+        await db.commit()
 
 
 async def _route(db, from_number: str) -> uuid.UUID | None:
@@ -106,3 +121,55 @@ async def _route(db, from_number: str) -> uuid.UUID | None:
         return retailer.business_id
     ids = (await db.execute(select(Business.id).limit(2))).scalars().all()
     return ids[0] if len(ids) == 1 else None
+
+
+async def handle_owner_message(db, business: Business, message: InboundMessage, providers: Providers) -> None:
+    """Price list in -> draft + confirmation question. YES/NO -> apply or discard the pending draft."""
+    wa = providers.whatsapp
+    text = (message.text or "").strip()
+    pending = await catalog_svc.pending_draft(db, business.id)
+
+    if message.kind == "text" and pending is not None and text.lower() in {"yes", "y", "ok", "okay", "add", "confirm"}:
+        await catalog_svc.apply_draft(db, pending)
+        await wa.send_text(message.from_number, catalog_svc.applied_reply(pending))
+        return
+    if message.kind == "text" and pending is not None and text.lower() in {"no", "n", "cancel", "discard"}:
+        await catalog_svc.discard_draft(db, pending)
+        await wa.send_text(message.from_number, "Discarded. Send the price list again whenever you're ready.")
+        return
+
+    audio = image = None
+    if message.kind in ("audio", "image"):
+        inline = message.raw.get("inline_media")
+        if inline is not None:
+            content, mime = inline, message.mime or "application/octet-stream"
+        elif message.media_id:
+            content, mime = await wa.download_media(message.media_id)
+        else:
+            await wa.send_text(message.from_number, "I couldn't read that attachment. Try sending it again.")
+            return
+        if message.kind == "audio":
+            audio = (content, mime)
+        else:
+            image = (content, mime)
+    elif message.kind != "text" or not text:
+        await wa.send_text(
+            message.from_number,
+            f"Hi, this is Leda for {business.name}. Send your price list as text, a photo, or a voice note and I'll "
+            "add the products to your catalog.",
+        )
+        return
+
+    decoded = await catalog_svc.extract(
+        providers.decoder, providers.transcriber, text=text or None, audio=audio, image=image
+    )
+    if not any(item.price is not None for item in decoded.items):
+        await wa.send_text(
+            message.from_number,
+            "I couldn't find any products with prices in that. Send it as lines like 'Royal Stallion 50kg - 78,500'.",
+        )
+        return
+    if pending is not None:
+        await catalog_svc.discard_draft(db, pending)  # a new list supersedes an unconfirmed one
+    draft = await catalog_svc.create_draft(db, business.id, "whatsapp", decoded)
+    await wa.send_text(message.from_number, catalog_svc.draft_reply(draft))

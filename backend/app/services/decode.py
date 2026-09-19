@@ -32,6 +32,7 @@ from app.models import (
     Retailer,
     ReviewState,
 )
+from app.services import catalog as catalog_svc
 from app.services import ledger as ledger_svc
 from app.services import orders as order_svc
 from app.services import reply as reply_svc
@@ -119,6 +120,11 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
         _apply_flags(order, decoded)
         order_svc.recompute(order)
         await db.flush()
+
+    # 3b. Remember what they asked for that we don't stock: the demand-side path into the catalog.
+    wanted = list(dict.fromkeys(list(decoded.unmatched) + [q.query for q in decoded.inquiries if q.sku is None]))
+    if wanted:
+        await catalog_svc.record_requests(db, business_id, wanted, retailer.id)
 
     # 4. Reply on WhatsApp with what we understood, prices, questions, and where to pay.
     reply_text: str | None = None

@@ -60,6 +60,36 @@ class DecodedOrder(BaseModel):
     summary: str = Field(description="One sentence summary of what the retailer wants.")
 
 
+class DecodedCatalogItem(BaseModel):
+    name: str = Field(description="Product name as a distributor would list it, e.g. 'Royal Stallion Parboiled Rice'.")
+    unit: str | None = Field(description="Pack size / unit if stated, e.g. 'Bag 50kg', 'Keg 25L', 'Carton 70'.")
+    price: float | None = Field(description="Selling price in naira as a number, or null if not stated.")
+    aliases: list[str] = Field(default_factory=list, description="Short names or slang for this product, if any.")
+    confidence: int = Field(ge=0, le=100, description="How sure you are about name, unit AND price together.")
+    note: str | None = Field(default=None, description="Why confidence is low, e.g. 'two prices listed'.")
+
+
+class DecodedCatalog(BaseModel):
+    items: list[DecodedCatalogItem]
+    summary: str = Field(description="One sentence, e.g. '14 products with prices, 2 without a price'.")
+
+
+CATALOG_PROMPT = """You are Sabi, helping a Nigerian wholesale distributor set up their product catalog on Leda.
+They have sent their price list: typed text, a photo of a price board or supplier sheet, or a voice note reading it.
+Extract every product with its pack size and selling price in naira. Rules:
+- One item per product + pack size ("Rice 50kg" and "Rice 25kg" are two items).
+- Prices like "78,500", "78.5k", "₦78500", "78500 naira" all mean 78500. If a line has no price, set price null.
+- Keep the distributor's naming; put obvious nicknames in aliases.
+- Never invent products or prices. Lower confidence when handwriting or audio is unclear and say why in note."""
+
+
+@dataclass
+class CatalogInput:
+    text: str | None = None
+    transcript: str | None = None
+    image: tuple[bytes, str] | None = None
+
+
 @dataclass
 class DecodeInput:
     catalog: list[dict]  # [{sku, name, unit, price, aliases}]
@@ -72,6 +102,7 @@ class DecodeInput:
 
 class Decoder(Protocol):
     async def decode(self, data: DecodeInput) -> DecodedOrder: ...
+    async def extract_catalog(self, data: CatalogInput) -> DecodedCatalog: ...
 
 
 SYSTEM_PROMPT = """You are Sabi, the order-decoding engine for Leda, used by wholesale distributors in Nigeria.
@@ -157,6 +188,47 @@ class ClaudeDecoder:
             parsed = DecodedOrder.model_validate(json.loads(text))
         return parsed
 
+    async def extract_catalog(self, data: CatalogInput) -> DecodedCatalog:
+        content: list[dict] = []
+        if data.image:
+            b, mime = data.image
+            content.append(
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": mime, "data": base64.standard_b64encode(b).decode()},
+                }
+            )
+        content.append({"type": "text", "text": _catalog_user_text(data)})
+        response = await self.client.beta.messages.parse(
+            model=self.model,
+            max_tokens=16000,
+            system=[{"type": "text", "text": CATALOG_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": content}],
+            output_format=DecodedCatalog,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "high"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+        if response.stop_reason == "refusal":
+            raise RuntimeError(f"Decoder refused: {getattr(response.stop_details, 'explanation', '')}")
+        parsed = response.parsed_output
+        if parsed is None:
+            text = next((b.text for b in response.content if b.type == "text"), "{}")
+            parsed = DecodedCatalog.model_validate(json.loads(text))
+        return parsed
+
+
+def _catalog_user_text(data: CatalogInput) -> str:
+    parts = []
+    if data.transcript:
+        parts.append(f'Voice note transcript (Whisper, may contain errors):\n"""{data.transcript}"""')
+    if data.text:
+        parts.append(f'Price list text:\n"""{data.text}"""')
+    if data.image:
+        parts.append("The image above is the price list.")
+    return "\n\n".join(parts) + "\n\nExtract the catalog."
+
 
 def _user_text(data: DecodeInput) -> str:
     parts = []
@@ -200,6 +272,26 @@ class OpenAIDecoder:
             instructions=SYSTEM_PROMPT + "\n\n" + _context(data),
             input=[{"role": "user", "content": content}],
             text_format=DecodedOrder,
+            reasoning={"effort": "medium"},
+        )
+        parsed = response.output_parsed
+        if parsed is None:
+            raise RuntimeError(f"OpenAI decoder returned no parsable output (status={response.status})")
+        return parsed
+
+    async def extract_catalog(self, data: CatalogInput) -> DecodedCatalog:
+        content: list[dict] = []
+        if data.image:
+            b, mime = data.image
+            content.append(
+                {"type": "input_image", "image_url": f"data:{mime};base64,{base64.standard_b64encode(b).decode()}"}
+            )
+        content.append({"type": "input_text", "text": _catalog_user_text(data)})
+        response = await self.client.responses.parse(
+            model=self.model,
+            instructions=CATALOG_PROMPT,
+            input=[{"role": "user", "content": content}],
+            text_format=DecodedCatalog,
             reasoning={"effort": "medium"},
         )
         parsed = response.output_parsed
@@ -293,7 +385,7 @@ class FakeDecoder:
         if not lines:
             # Plain text like "20 bags MGR-50": pick any SKU literally mentioned.
             for sku in skus:
-                if sku.lower() in text:
+                if re.search(rf"\b{re.escape(sku.lower())}\b", text):
                     lines.append(DecodedLine(sku=sku, quantity=20, confidence=96, reasoning="SKU named in message"))
         inquiries: list[DecodedInquiry] = []
         unmatched: list[str] = []
@@ -319,6 +411,35 @@ class FakeDecoder:
             flags=flags,
             summary="fake decode",
         )
+
+    async def extract_catalog(self, data: CatalogInput) -> DecodedCatalog:
+        """Parses lines like 'Royal Stallion Rice 50kg - 78,500' or 'Kings Oil 25L: 96.5k'."""
+        text = "\n".join(filter(None, [data.text, data.transcript]))
+        if data.image and not text:
+            text = (
+                "Royal Stallion Parboiled Rice 50kg - 78,500\nMama Gold Premium Rice 50kg - 77,200\n"
+                "Kings Vegetable Oil 25L - 96,500"
+            )
+        items: list[DecodedCatalogItem] = []
+        for raw in text.splitlines():
+            line = raw.strip(" •-*\t")
+            if not line:
+                continue
+            m = re.match(
+                r"^(?P<name>.+?)\s*[-–:=]\s*(?:₦|ngn)?\s*(?P<price>[\d.,]+)\s*(?P<k>k)?\s*(?:naira)?\s*$", line, re.I
+            )
+            if not m:
+                items.append(
+                    DecodedCatalogItem(name=line[:120], unit=None, price=None, confidence=40, note="no price found")
+                )
+                continue
+            price = float(m.group("price").replace(",", "")) * (1000 if m.group("k") else 1)
+            name = m.group("name").strip()
+            unit_m = re.search(r"(\d+\s?(?:kg|l|ltr|litre|pcs|ctn|carton))\b", name, re.I)
+            unit = unit_m.group(1) if unit_m else None
+            items.append(DecodedCatalogItem(name=name, unit=unit, price=price, confidence=95))
+        priced = sum(1 for i in items if i.price is not None)
+        return DecodedCatalog(items=items, summary=f"{len(items)} products, {priced} with prices")
 
 
 _default: Decoder | None = None
