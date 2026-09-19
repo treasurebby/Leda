@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from app.core.db import get_session_factory
 from app.core.deps import DB, CurrentTenant
 from app.integrations.whatsapp import InboundMessage
-from app.models import Retailer
+from app.models import Order, Retailer
 from app.schemas.common import Message
 from app.schemas.payments import PaymentOut, SimulateCredit
 from app.services import reconcile
@@ -41,7 +41,14 @@ async def simulate_credit(data: SimulateCredit, db: DB, tenant: CurrentTenant):
     await db.commit()
     if payment is None:
         return Message(detail=f"Reference {reference} was already processed; nothing changed")
-    return PaymentOut.model_validate(payment)
+    out = PaymentOut.model_validate(payment)
+    if payment.retailer_id:
+        retailer = await db.get(Retailer, payment.retailer_id)
+        out.retailer_name = retailer.name if retailer else None
+    if payment.order_id:
+        order = await db.get(Order, payment.order_id)
+        out.order_number = order.number if order else None
+    return out
 
 
 @router.post("/simulate/whatsapp", response_model=Message, status_code=status.HTTP_202_ACCEPTED)
