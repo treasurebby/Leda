@@ -4,6 +4,19 @@ import os
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-at-least-32-bytes-long")
+# The suite must not pick up real provider credentials from backend/.env: every integration runs as its fake.
+for _key in (
+    "RESEND_API_KEY",
+    "S3_BUCKET",
+    "PAYSTACK_SECRET_KEY",
+    "WHATSAPP_ACCESS_TOKEN",
+    "WHATSAPP_PHONE_NUMBER_ID",
+    "WHATSAPP_APP_SECRET",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+):
+    os.environ[_key] = ""
+os.environ["DECODER"] = "fake"
 
 from collections.abc import AsyncIterator  # noqa: E402
 
