@@ -28,7 +28,7 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
         )
         db.add(log_row)
         try:
-            await db.flush()
+            await db.commit()  # committed on its own so the dedupe holds even if decoding fails below
         except IntegrityError:
             await db.rollback()
             log.info("duplicate WhatsApp message %s ignored", message.wa_message_id)
@@ -68,10 +68,14 @@ async def handle_inbound(message: InboundMessage, session_factory, business_id: 
                 db, business_id, signal, Providers(get_storage(), get_transcriber(), get_decoder())
             )
             log_row.order_id = order.id
+            await db.commit()
         except Exception as exc:
             log.exception("decode failed for %s", message.wa_message_id)
-            log_row.error = str(exc)[:255]
-        await db.commit()
+            await db.rollback()
+            log_row = await db.get(WhatsAppMessage, log_row.id)
+            if log_row is not None:
+                log_row.error = str(exc)[:255]
+                await db.commit()
 
 
 async def _route(db, from_number: str) -> uuid.UUID | None:

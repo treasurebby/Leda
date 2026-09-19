@@ -26,13 +26,23 @@ OWNER = {
 }
 
 
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")  # e.g. postgresql+asyncpg://leda@127.0.0.1:5434/leda_test
+
+
 @pytest.fixture
 async def engine():
-    eng = create_async_engine(
-        "sqlite+aiosqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
-    async with eng.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """In-memory SQLite by default; set TEST_DATABASE_URL to run the same suite against Postgres."""
+    if TEST_DATABASE_URL:
+        eng = create_async_engine(TEST_DATABASE_URL)
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        eng = create_async_engine(
+            "sqlite+aiosqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     yield eng
     await eng.dispose()
 

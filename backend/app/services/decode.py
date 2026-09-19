@@ -125,8 +125,11 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
     if retailer is None and decoded.retailer_guess:
         order.retailer_name_guess = decoded.retailer_guess
 
-    # 4. Persist lines and flags.
-    _apply(order, decoded, {p.sku: p for p in products})
+    # 4. Persist lines, then flags (flags reference lines by FK, so lines must exist first).
+    by_sku = {p.sku: p for p in products}
+    _apply_lines(order, decoded, by_sku)
+    await db.flush()
+    _apply_flags(order, decoded)
     order_svc.recompute(order)
     await db.flush()
 
@@ -151,7 +154,7 @@ async def decode_signal(db: AsyncSession, business_id: uuid.UUID, signal: Signal
     return order
 
 
-def _apply(order: Order, decoded: DecodedOrder, by_sku: dict[str, Product]) -> None:
+def _apply_lines(order: Order, decoded: DecodedOrder, by_sku: dict[str, Product]) -> None:
     lines: list[OrderLine] = []
     for position, dl in enumerate(decoded.lines):
         product = by_sku.get(dl.sku)
@@ -175,6 +178,10 @@ def _apply(order: Order, decoded: DecodedOrder, by_sku: dict[str, Product]) -> N
             )
         )
     order.lines = lines
+
+
+def _apply_flags(order: Order, decoded: DecodedOrder) -> None:
+    lines = order.lines
     for df in decoded.flags:
         line = lines[df.line_index] if df.line_index is not None and 0 <= df.line_index < len(lines) else None
         if line is not None:
