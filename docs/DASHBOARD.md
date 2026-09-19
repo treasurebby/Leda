@@ -71,8 +71,11 @@ permissions and workspace APIs before they can be safely activated.
 
 ## Data and Limits
 
-All figures are illustrative demo data held in `src/dashboard/Dashboard.tsx`.
-Nothing here is persisted or fetched; refresh restores the original queue. Wiring
-this to real order, payment and verification APIs is the next step before launch,
-and the Sabi confidence scores should come from the decoding service rather than
-constants.
+The KPI tiles, activity list and flag queue are still illustrative demo data held
+in `src/dashboard/Dashboard.tsx`; refresh restores the original queue. The
+sidebar and profile menu show the signed-in user from `GET /auth/me` and sign out
+through the API. The backend already serves everything this screen needs
+(`GET /dashboard/summary`, `GET /orders`, `GET /flags`, `GET /notifications`; see
+`docs/BACKEND.md`), so replacing the constants with those calls is the next
+frontend step; `backend/scripts/seed.py` loads the same demo numbers so the
+switch is visually seamless.

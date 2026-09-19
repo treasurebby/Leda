@@ -42,10 +42,12 @@ It opens a review dialog with retailer, delivery, unit count, total and any item
 still marked for confirmation. Choosing **Prepare confirmation** updates the page
 to a success state.
 
-The interaction is deliberately labeled as a preview: no WhatsApp message is
-actually sent without a connected provider. The final delivery integration should
-send this reviewed payload from a secure backend, persist the audit trail, and
-replace the preview disclosure only when delivery status is available.
+The screen is still driven by local demo state. The backend serves the same
+shape at `GET /orders/{id}` (lines with confidence and review state, evidence
+with media URLs, flags) and accepts the edits at `PATCH /orders/{id}/lines`,
+`POST /orders/{id}/lines/{line}/review` and `POST /orders/{id}/confirm`, which
+posts the invoice and sends the WhatsApp confirmation (see `docs/BACKEND.md`).
+Wiring this screen to those calls is the next frontend step.
 
 ## Responsive Behavior
 

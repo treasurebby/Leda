@@ -13,8 +13,8 @@ preserved at `#/welcome`; its navigation and hero Sign Up buttons open onboardin
    try sample data, or skip.
 4. The Money: import retailers with an animated processing sequence, preview
    account references, download a template, try sample data, or skip.
-5. The Team: prepare staff contacts, temporary passwords and roles, add or remove
-   team members, and edit assigned roles.
+5. The Team: invite staff by email with a role; each invitee sets their own
+   password from the emailed link. Invitations can be withdrawn before acceptance.
 
 Completion presents an editable setup summary and a JSON download. The progress
 navigation allows returning to visited steps. Product and retailer imports remain
@@ -39,37 +39,40 @@ CSV parsing uses Papa Parse. Excel parsing uses `readSheet(file, 1)` from
 
 Saving is explicit through Save and exit. A draft is stored in this browser's
 localStorage with a seven-day expiry and removed on the next visit after expiry.
-Returning requires re-entering the owner password before resuming the saved step.
+Returning requires re-entering the owner password, which signs in to the account
+created in step 1 before resuming the saved step.
 
-Passwords never enter localStorage, setup downloads, logs or network requests.
-Owner and unsubmitted staff passwords only exist in React state. Staff passwords
-are discarded after adding a member in the preview. Drafts include added team
-members, not an unsubmitted staff form.
+Passwords never enter localStorage, setup downloads, logs or drafts. The owner
+password is sent once to `POST /auth/register` (or `/auth/login` when resuming)
+over HTTPS and stored as an argon2 hash. Staff never receive a password from the
+owner: each invitation is an emailed link (`#/join/<token>`) where the invitee
+chooses their own.
 
 ## Live Service Boundary
 
-This is an interactive frontend preview, not a production account provisioning
-system. CSV/Excel parsing, validation, templates, local drafts and summary exports
-work. No authentication account, WhatsApp number, bank account or staff invitation
-is created by completing the flow. Account references use `PREVIEW 0001` rather
-than plausible bank account numbers and cannot receive payments.
+Steps 1, 3, 4 and 5 are live against the backend (see `docs/BACKEND.md`):
+the owner account and business are created, product and retailer files are
+validated and imported server-side (the browser validation is a fast pre-check
+with the same rules), and team invitations are sent by email.
 
-Before production, connect a secure backend for owner authentication, business
-verification, WhatsApp number provisioning, retailer virtual accounts and staff
-invitations. Passwords must be sent over HTTPS to an authentication provider,
-never added to drafts or summary exports. Validate role permissions and imports
-again on the server. The preview disclosures must only be removed once those
-services are actually connected.
+Two parts still depend on external providers being configured:
+
+- The Bridge (step 2) stores the choice. A Leda Virtual Number is provisioned
+  only once the WhatsApp Cloud API credentials are set.
+- Retailer virtual accounts are created per retailer from the Retailers page via
+  Paystack; until a Paystack key is configured a fake provider issues test
+  account numbers.
 
 ## Implementation
 
-- `src/onboarding/Onboarding.tsx`: flow state, transitions, navigation and completion.
+- `src/onboarding/Onboarding.tsx`: flow state, transitions, API calls and completion.
 - `src/onboarding/Steps.tsx`: the five screens and import progress.
 - `src/onboarding/Fields.tsx`: accessible fields and keyboard-searchable industries.
 - `src/onboarding/model.ts`: shared types, validation and industry/role data.
-- `src/onboarding/imports.ts`: spreadsheet parsing, validation and templates.
+- `src/onboarding/imports.ts`: spreadsheet pre-validation and templates (mirrored by `backend/app/services/imports.py`).
 - `src/onboarding/draft.ts`: explicit draft storage and password-free exports.
-- `src/onboarding/onboarding.css`: responsive visual system.
+- `src/api/`: fetch client, generated OpenAPI types (`npm run gen:api`), auth and onboarding helpers.
+- `src/auth/`: the sign-in (`#/login`) and invitation (`#/join/<token>`) pages.
 
 Keyboard users can search industries with arrow keys and Enter, go back to completed
 steps, reveal passwords and operate native focus-trapped help/save dialogs. The

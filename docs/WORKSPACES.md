@@ -48,7 +48,9 @@ section and filters its relevant records.
 
 ## Demo Boundary
 
-These sections are interactive frontend data. Refreshing restores the seed data;
-no changes are saved to a server. Amounts are illustrative. Before launch, replace
-the constants in `src/dashboard/Workspaces.tsx` with authenticated APIs and keep
-the current local feedback only as optimistic UI after server confirmation.
+These sections are still interactive frontend data. Refreshing restores the seed
+data. The backend now provides the corresponding endpoints (`/orders`, `/products`,
+`/retailers` incl. virtual-account provisioning, `/payments` match/unmatch,
+`/ledger` with CSV export; see `docs/BACKEND.md`), so the remaining work is to
+replace the constants in `src/dashboard/Workspaces.tsx` with those calls and keep
+the current local feedback as optimistic UI after server confirmation.
